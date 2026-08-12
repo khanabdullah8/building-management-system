@@ -1,0 +1,41 @@
+const express = require('express');
+const mongoose = require('mongoose');
+const helmet = require('helmet');
+const cors = require('cors');
+const morgan = require('morgan');
+
+const { NODE_ENV, ALLOWED_ORIGINS } = require('./config/env');
+const { createRateLimiter } = require('./middlewares/rateLimit');
+const notFoundHandler = require('./middlewares/notFound');
+const errorHandler = require('./middlewares/error');
+
+const app = express();
+
+app.use(helmet());
+app.use(
+  cors({
+    origin(origin, callback) {
+      if (!origin || ALLOWED_ORIGINS.includes(origin)) {
+        return callback(null, true);
+      }
+      return callback(null, false);
+    },
+  })
+);
+app.use(express.json({ limit: '1mb' }));
+app.use(morgan('dev', { skip: () => NODE_ENV === 'test' }));
+app.use(createRateLimiter());
+
+app.get('/api/health', (req, res) => {
+  res.status(200).json({
+    success: true,
+    message: 'BMMS backend is running',
+    database: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
+    timestamp: new Date().toISOString(),
+  });
+});
+
+app.use(notFoundHandler);
+app.use(errorHandler);
+
+module.exports = app;
