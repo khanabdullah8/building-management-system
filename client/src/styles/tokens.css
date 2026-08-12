@@ -11,6 +11,14 @@
   --color-success: #12b76a;
   --color-warning: #f79009;
   --color-info: #1570ef;
+  --color-purple: #7a5af8;
+
+  --color-success-soft: #ecfdf3;
+  --color-warning-soft: #fffaeb;
+  --color-danger-soft: #fef3f2;
+  --color-info-soft: #eff8ff;
+  --color-gray-soft: #f2f4f7;
+  --color-purple-soft: #f4f3fe;
 
   --radius-sm: 6px;
   --radius-md: 10px;

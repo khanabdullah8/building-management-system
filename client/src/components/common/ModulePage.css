@@ -1,0 +1,19 @@
+.module-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+.module-body {
+  min-height: 200px;
+}
+
+.module-action-notice {
+  margin: 0 0 var(--space-4);
+  padding: 10px 14px;
+  font-size: 13px;
+  border-radius: var(--radius-sm);
+  background: var(--color-info-soft);
+  color: var(--color-info);
+}

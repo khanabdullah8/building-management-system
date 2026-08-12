@@ -13,20 +13,23 @@ function renderApp(initialPath = '/') {
 }
 
 describe('App shell', () => {
-  it('renders the layout with the dashboard at /', () => {
+  it('renders the layout with the dashboard at /', async () => {
     renderApp()
 
-    expect(screen.getByText('Dashboard Module')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Buildings' })).toBeInTheDocument()
+    expect(await screen.findByText('Total Buildings')).toBeInTheDocument()
   })
 
-  it('navigates to the buildings placeholder page', async () => {
+  it('navigates to the buildings page', async () => {
     const user = userEvent.setup()
     renderApp()
 
     await user.click(screen.getByRole('link', { name: 'Buildings' }))
 
-    expect(await screen.findByText('Buildings Module')).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Buildings' })).toBeInTheDocument()
+    expect(
+      await screen.findByPlaceholderText('Search buildings…'),
+    ).toBeInTheDocument()
   })
 
   it('renders the login page at /login', () => {
