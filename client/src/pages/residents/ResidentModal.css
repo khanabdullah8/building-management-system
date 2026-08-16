@@ -1,0 +1,49 @@
+.resident-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.resident-form-alert,
+.resident-page-alert {
+  margin: 0 0 var(--space-4);
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.resident-form-alert-error,
+.resident-page-alert-error {
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+  border: 1px solid rgba(217, 45, 32, 0.2);
+}
+
+.resident-page-alert-success {
+  background: var(--color-success-soft);
+  color: var(--color-success);
+  border: 1px solid rgba(18, 183, 106, 0.2);
+}
+
+.form-group { display: flex; flex-direction: column; gap: var(--space-1); }
+.form-row { display: flex; gap: var(--space-3); }
+.flex-1 { flex: 1; }
+.form-label { font-size: 13px; font-weight: 500; color: var(--color-text); }
+.form-label .required { color: var(--color-danger); }
+.form-input { width: 100%; padding: 8px 12px; font: inherit; font-size: 14px; color: var(--color-text); background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-sm); outline: none; }
+.form-input:focus { border-color: var(--color-primary); box-shadow: 0 0 0 3px var(--color-primary-soft); }
+.form-input:disabled { background: var(--color-gray-soft); color: var(--color-text-muted); cursor: not-allowed; }
+.form-input.input-error { border-color: var(--color-danger); }
+.form-input.input-error:focus { box-shadow: 0 0 0 3px var(--color-danger-soft); }
+.field-error-msg { font-size: 12px; color: var(--color-danger); margin-top: 2px; }
+.form-actions { display: flex; align-items: center; justify-content: flex-end; gap: var(--space-2); margin-top: var(--space-3); padding-top: var(--space-3); border-top: 1px solid var(--color-border); }
+.resident-row-actions { display: flex; gap: var(--space-2); }
+.btn-danger { background: var(--color-danger); color: #fff; }
+.btn-danger:hover:not(:disabled) { background: #b42318; }
+.delete-resident-content { display: flex; flex-direction: column; gap: var(--space-3); }
+.delete-resident-warning { color: var(--color-danger); font-size: 14px; }
+
+@media (max-width: 600px) {
+  .form-row { flex-direction: column; }
+}

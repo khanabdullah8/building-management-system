@@ -9,6 +9,10 @@ const { createRateLimiter } = require('./middlewares/rateLimit');
 const notFoundHandler = require('./middlewares/notFound');
 const errorHandler = require('./middlewares/error');
 
+const buildingRoutes = require('./routes/buildingRoutes');
+const unitRoutes = require('./routes/unitRoutes');
+const residentRoutes = require('./routes/residentRoutes');
+
 const app = express();
 
 app.use(helmet());
@@ -34,6 +38,10 @@ app.get('/api/health', (req, res) => {
     timestamp: new Date().toISOString(),
   });
 });
+
+app.use('/api/v1/buildings', buildingRoutes);
+app.use('/api/v1/units', unitRoutes);
+app.use('/api/v1/residents', residentRoutes);
 
 app.use(notFoundHandler);
 app.use(errorHandler);

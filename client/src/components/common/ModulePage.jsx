@@ -16,6 +16,7 @@ function ModulePage({
   description,
   actionLabel,
   actionTo,
+  onAction,
   searchPlaceholder = 'Search…',
   columns = [],
   rows = [],
@@ -37,7 +38,11 @@ function ModulePage({
   }, [rows, query])
 
   const handleAction = () => {
-    setActionNotice(true)
+    if (onAction) {
+      onAction()
+    } else {
+      setActionNotice(true)
+    }
   }
 
   const renderBody = () => {
