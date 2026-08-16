@@ -12,6 +12,7 @@ const errorHandler = require('./middlewares/error');
 const buildingRoutes = require('./routes/buildingRoutes');
 const unitRoutes = require('./routes/unitRoutes');
 const residentRoutes = require('./routes/residentRoutes');
+const maintenanceRoutes = require('./routes/maintenanceRoutes');
 
 const app = express();
 
@@ -42,6 +43,7 @@ app.get('/api/health', (req, res) => {
 app.use('/api/v1/buildings', buildingRoutes);
 app.use('/api/v1/units', unitRoutes);
 app.use('/api/v1/residents', residentRoutes);
+app.use('/api/v1/maintenance', maintenanceRoutes);
 
 app.use(notFoundHandler);
 app.use(errorHandler);
