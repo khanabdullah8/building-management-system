@@ -13,6 +13,7 @@ const buildingRoutes = require('./routes/buildingRoutes');
 const unitRoutes = require('./routes/unitRoutes');
 const residentRoutes = require('./routes/residentRoutes');
 const maintenanceRoutes = require('./routes/maintenanceRoutes');
+const complaintRoutes = require('./routes/complaintRoutes');
 
 const app = express();
 
@@ -44,6 +45,7 @@ app.use('/api/v1/buildings', buildingRoutes);
 app.use('/api/v1/units', unitRoutes);
 app.use('/api/v1/residents', residentRoutes);
 app.use('/api/v1/maintenance', maintenanceRoutes);
+app.use('/api/v1/complaints', complaintRoutes);
 
 app.use(notFoundHandler);
 app.use(errorHandler);
