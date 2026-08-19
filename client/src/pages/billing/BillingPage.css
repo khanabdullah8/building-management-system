@@ -1,0 +1,43 @@
+.billing-page-alert {
+  margin: 0 0 var(--space-4);
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.billing-page-alert-error {
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+  border: 1px solid rgba(217, 45, 32, 0.2);
+}
+
+.billing-page-alert-success {
+  background: var(--color-success-soft);
+  color: var(--color-success);
+  border: 1px solid rgba(18, 183, 106, 0.2);
+}
+
+.billing-row-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.billing-building-filter {
+  min-width: 180px;
+}
+
+.billing-status-filter {
+  min-width: 140px;
+}
+
+.delete-billing-content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.delete-billing-warning {
+  color: var(--color-danger);
+  font-size: 14px;
+}
