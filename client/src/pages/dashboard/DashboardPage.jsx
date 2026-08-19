@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import PageHeader from '../../components/ui/PageHeader'
 import StatCard from '../../components/ui/StatCard'
@@ -6,15 +7,22 @@ import DataTable from '../../components/ui/DataTable'
 import Badge from '../../components/ui/Badge'
 import Spinner from '../../components/ui/Spinner'
 import ErrorState from '../../components/ui/ErrorState'
-import { useDemoData } from '../../hooks/useDemoData'
+import http from '../../api/http'
 import { formatCurrency } from '../../utils/formatters'
 import { statusTone } from '../../utils/status'
-import { demoDashboard } from '../../data/demoData'
 import './DashboardPage.css'
 
 const complaintColumns = [
   { key: 'subject', header: 'Subject' },
-  { key: 'unit', header: 'Unit' },
+  {
+    key: 'unit',
+    header: 'Unit',
+    render: (value) => {
+      if (!value) return '—'
+      const building = value.building
+      return building ? `${value.unitNumber} (${building.name})` : value.unitNumber
+    },
+  },
   {
     key: 'status',
     header: 'Status',
@@ -24,7 +32,15 @@ const complaintColumns = [
 
 const maintenanceColumns = [
   { key: 'title', header: 'Request' },
-  { key: 'unit', header: 'Unit' },
+  {
+    key: 'unit',
+    header: 'Unit',
+    render: (value) => {
+      if (!value) return '—'
+      const building = value.building
+      return building ? `${value.unitNumber} (${building.name})` : value.unitNumber
+    },
+  },
   {
     key: 'priority',
     header: 'Priority',
@@ -38,7 +54,16 @@ const maintenanceColumns = [
 ]
 
 const paymentColumns = [
-  { key: 'unit', header: 'Unit' },
+  {
+    key: 'bill',
+    header: 'Unit',
+    render: (value) => {
+      const unit = value?.unit
+      if (!unit) return '—'
+      const building = unit.building
+      return building ? `${unit.unitNumber} (${building.name})` : unit.unitNumber
+    },
+  },
   { key: 'method', header: 'Method' },
   {
     key: 'amount',
@@ -60,7 +85,29 @@ const QUICK_ACTIONS = [
 ]
 
 function DashboardPage() {
-  const { loading, error, data, retry } = useDemoData(() => demoDashboard, 300)
+  const [data, setData] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+  const [retryCount, setRetryCount] = useState(0)
+
+  useEffect(() => {
+    let cancelled = false
+    const timer = setTimeout(async () => {
+      setLoading(true)
+      setError(null)
+      try {
+        const response = await http.get('/v1/dashboard')
+        if (!cancelled) setData(response.data?.data || null)
+      } catch (err) {
+        if (!cancelled) setError(err.message || 'Failed to load dashboard.')
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }, 0)
+    return () => { cancelled = true; clearTimeout(timer) }
+  }, [retryCount])
+
+  const handleRetry = () => setRetryCount((c) => c + 1)
 
   return (
     <div className="dashboard">
@@ -72,13 +119,9 @@ function DashboardPage() {
       {loading ? (
         <Spinner label="Loading dashboard…" />
       ) : error ? (
-        <ErrorState message={error} onRetry={retry} />
+        <ErrorState message={error} onRetry={handleRetry} />
       ) : (
         <>
-          <p className="demo-banner">
-            Demo data — dashboard metrics will come from the backend API in later phases.
-          </p>
-
           <section className="kpi-grid" aria-label="Key metrics">
             <StatCard label="Total Buildings" value={data.buildings} icon="B" />
             <StatCard label="Total Units" value={data.units} tone="purple" icon="U" />

@@ -20,6 +20,7 @@ const parkingRoutes = require('./routes/parkingRoutes');
 const expenseRoutes = require('./routes/expenseRoutes');
 const billingRoutes = require('./routes/billingRoutes');
 const paymentRoutes = require('./routes/paymentRoutes');
+const dashboardRoutes = require('./routes/dashboardRoutes');
 
 const app = express();
 
@@ -58,6 +59,7 @@ app.use('/api/v1/parking', parkingRoutes);
 app.use('/api/v1/expenses', expenseRoutes);
 app.use('/api/v1/billing', billingRoutes);
 app.use('/api/v1/payments', paymentRoutes);
+app.use('/api/v1/dashboard', dashboardRoutes);
 
 app.use(notFoundHandler);
 app.use(errorHandler);

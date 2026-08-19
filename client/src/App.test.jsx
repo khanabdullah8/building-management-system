@@ -1,8 +1,18 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import App from './App'
+import http from './api/http'
+
+vi.mock('./api/http', () => ({
+  default: {
+    get: vi.fn(),
+    post: vi.fn(),
+    put: vi.fn(),
+    delete: vi.fn(),
+  },
+}))
 
 function renderApp(initialPath = '/') {
   return render(
@@ -13,6 +23,26 @@ function renderApp(initialPath = '/') {
 }
 
 describe('App shell', () => {
+  beforeEach(() => {
+    vi.resetAllMocks()
+    http.get.mockImplementation((url) => {
+      if (url === '/v1/dashboard') {
+        return Promise.resolve({
+          data: {
+            success: true,
+            data: {
+              buildings: 0, units: 0, occupied: 0, vacant: 0,
+              pendingMaintenance: 0, openComplaints: 0, pendingPayments: 0,
+              monthlyCollection: 0, recentComplaints: [], recentMaintenance: [],
+              recentPayments: [],
+            },
+          },
+        })
+      }
+      return Promise.resolve({ data: { success: true, data: [] } })
+    })
+  })
+
   it('renders the layout with the dashboard at /', async () => {
     renderApp()
 
