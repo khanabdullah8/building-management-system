@@ -18,6 +18,7 @@ const TONES = {
   available: 'info',
   unassigned: 'gray',
   rejected: 'danger',
+  failed: 'danger',
 }
 
 export function statusTone(status) {

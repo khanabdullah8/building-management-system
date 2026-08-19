@@ -1,0 +1,32 @@
+.payment-page-alert {
+  padding: 0.6rem 0.9rem;
+  border-radius: var(--radius-sm);
+  margin-bottom: 1rem;
+  font-size: 0.875rem;
+}
+
+.payment-page-alert-success {
+  background: var(--color-success-light, #edf7ed);
+  color: var(--color-success, #2e7d32);
+  border: 1px solid var(--color-success, #2e7d32);
+}
+
+.payment-page-alert-error {
+  background: var(--color-danger-light, #fdecea);
+  color: var(--color-danger, #d32f2f);
+  border: 1px solid var(--color-danger, #d32f2f);
+}
+
+.payment-row-actions {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.delete-payment-content p {
+  margin: 0 0 0.5rem;
+}
+
+.delete-payment-warning {
+  font-size: 0.85rem;
+  color: var(--color-text-muted, #666);
+}

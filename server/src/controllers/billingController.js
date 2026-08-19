@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 const Bill = require('../models/Bill');
 const Unit = require('../models/Unit');
+const Payment = require('../models/Payment');
 const ApiError = require('../utils/ApiError');
 const { sendSuccess } = require('../utils/apiResponse');
 const asyncHandler = require('../utils/asyncHandler');
@@ -231,7 +232,11 @@ const deleteBill = asyncHandler(async (req, res) => {
     throw new ApiError(404, 'Bill not found');
   }
 
-  // TODO: When Payments module is implemented, block deletion if linked payments exist
+  const existingPayment = await Payment.findOne({ bill: id }).select('_id').lean();
+  if (existingPayment) {
+    throw new ApiError(400, 'Cannot delete bill with existing payments');
+  }
+
   const bill = await Bill.findByIdAndDelete(id);
   if (!bill) {
     throw new ApiError(404, 'Bill not found');

@@ -8,6 +8,7 @@ const app = require('../src/app');
 const Building = require('../src/models/Building');
 const Unit = require('../src/models/Unit');
 const Bill = require('../src/models/Bill');
+const Payment = require('../src/models/Payment');
 const { startMemoryDb, stopMemoryDb } = require('./helpers/db');
 
 describe('Bill API (/api/v1/billing)', () => {
@@ -39,6 +40,7 @@ describe('Bill API (/api/v1/billing)', () => {
   });
 
   beforeEach(async () => {
+    await Payment.deleteMany({});
     await Bill.deleteMany({});
     await Unit.deleteMany({});
     await Building.deleteMany({});
@@ -622,6 +624,22 @@ describe('Bill API (/api/v1/billing)', () => {
 
       expect(res.status).toBe(404);
       expect(res.body.message).toBe('Bill not found');
+    });
+
+    it('rejects deletion when payments exist for the bill', async () => {
+      const bill = await Bill.create(validPayload());
+      await Payment.create({
+        bill: bill._id.toString(),
+        amount: 5000,
+        method: 'upi',
+        status: 'completed',
+      });
+
+      const res = await request(app).delete(`/api/v1/billing/${bill._id}`);
+
+      expect(res.status).toBe(400);
+      expect(res.body.message).toMatch(/cannot delete bill with existing payments/i);
+      expect(await Bill.findById(bill._id)).not.toBeNull();
     });
   });
 });
