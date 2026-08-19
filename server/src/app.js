@@ -17,6 +17,7 @@ const complaintRoutes = require('./routes/complaintRoutes');
 const noticeRoutes = require('./routes/noticeRoutes');
 const visitorRoutes = require('./routes/visitorRoutes');
 const parkingRoutes = require('./routes/parkingRoutes');
+const expenseRoutes = require('./routes/expenseRoutes');
 
 const app = express();
 
@@ -52,6 +53,7 @@ app.use('/api/v1/complaints', complaintRoutes);
 app.use('/api/v1/notices', noticeRoutes);
 app.use('/api/v1/visitors', visitorRoutes);
 app.use('/api/v1/parking', parkingRoutes);
+app.use('/api/v1/expenses', expenseRoutes);
 
 app.use(notFoundHandler);
 app.use(errorHandler);

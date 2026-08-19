@@ -17,6 +17,7 @@ const TONES = {
   inactive: 'gray',
   available: 'info',
   unassigned: 'gray',
+  rejected: 'danger',
 }
 
 export function statusTone(status) {
