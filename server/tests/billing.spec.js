@@ -10,8 +10,10 @@ const Unit = require('../src/models/Unit');
 const Bill = require('../src/models/Bill');
 const Payment = require('../src/models/Payment');
 const { startMemoryDb, stopMemoryDb } = require('./helpers/db');
+const { createTestAdmin, removeTestAdmin, getAuthToken, authRequest } = require('./helpers/auth');
 
 describe('Bill API (/api/v1/billing)', () => {
+  let authToken;
   let sampleBuilding;
   let secondaryBuilding;
   let sampleUnit;
@@ -33,9 +35,12 @@ describe('Bill API (/api/v1/billing)', () => {
 
   beforeAll(async () => {
     await startMemoryDb();
+    const admin = await createTestAdmin();
+    authToken = `Bearer ${getAuthToken(admin)}`;
   });
 
   afterAll(async () => {
+    await removeTestAdmin();
     await stopMemoryDb();
   });
 
@@ -66,7 +71,7 @@ describe('Bill API (/api/v1/billing)', () => {
 
   describe('POST /api/v1/billing', () => {
     it('creates a bill with Unit and Building populated', async () => {
-      const res = await request(app).post('/api/v1/billing').send(validPayload());
+      const res = await authRequest(app, authToken).post('/api/v1/billing').send(validPayload());
 
       expect(res.status).toBe(201);
       expect(res.body.success).toBe(true);
@@ -85,14 +90,14 @@ describe('Bill API (/api/v1/billing)', () => {
     });
 
     it('auto-generates billNo when omitted', async () => {
-      const res = await request(app).post('/api/v1/billing').send(minimalPayload());
+      const res = await authRequest(app, authToken).post('/api/v1/billing').send(minimalPayload());
 
       expect(res.status).toBe(201);
       expect(res.body.data.billNo).toMatch(/^BILL-/);
     });
 
     it('accepts an explicit billNo', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .post('/api/v1/billing')
         .send({ ...minimalPayload(), billNo: 'BILL-20260101-001' });
 
@@ -101,11 +106,11 @@ describe('Bill API (/api/v1/billing)', () => {
     });
 
     it('rejects duplicate billNo', async () => {
-      await request(app)
+      await authRequest(app, authToken)
         .post('/api/v1/billing')
         .send({ ...minimalPayload(), billNo: 'BILL-DUP-001' });
 
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .post('/api/v1/billing')
         .send({ ...minimalPayload(), billNo: 'BILL-DUP-001', amount: 4000 });
 
@@ -114,7 +119,7 @@ describe('Bill API (/api/v1/billing)', () => {
     });
 
     it('defaults status to pending and paidAt to null', async () => {
-      const res = await request(app).post('/api/v1/billing').send(minimalPayload());
+      const res = await authRequest(app, authToken).post('/api/v1/billing').send(minimalPayload());
 
       expect(res.status).toBe(201);
       expect(res.body.data.status).toBe('pending');
@@ -122,21 +127,21 @@ describe('Bill API (/api/v1/billing)', () => {
     });
 
     it('defaults description to empty string when omitted', async () => {
-      const res = await request(app).post('/api/v1/billing').send(minimalPayload());
+      const res = await authRequest(app, authToken).post('/api/v1/billing').send(minimalPayload());
 
       expect(res.status).toBe(201);
       expect(res.body.data.description).toBe('');
     });
 
     it('defaults dueDate to null when omitted', async () => {
-      const res = await request(app).post('/api/v1/billing').send(minimalPayload());
+      const res = await authRequest(app, authToken).post('/api/v1/billing').send(minimalPayload());
 
       expect(res.status).toBe(201);
       expect(res.body.data.dueDate).toBeNull();
     });
 
     it('rejects missing unit', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .post('/api/v1/billing')
         .send({ period: 'Jan 2026', amount: 100 });
 
@@ -145,7 +150,7 @@ describe('Bill API (/api/v1/billing)', () => {
     });
 
     it('rejects invalid unit ID format', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .post('/api/v1/billing')
         .send({ ...minimalPayload(), unit: 'invalid-id' });
 
@@ -154,7 +159,7 @@ describe('Bill API (/api/v1/billing)', () => {
     });
 
     it('rejects nonexistent unit reference', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .post('/api/v1/billing')
         .send({ ...minimalPayload(), unit: new mongoose.Types.ObjectId().toString() });
 
@@ -163,7 +168,7 @@ describe('Bill API (/api/v1/billing)', () => {
     });
 
     it('rejects missing period', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .post('/api/v1/billing')
         .send({ unit: sampleUnit._id.toString(), amount: 100 });
 
@@ -172,7 +177,7 @@ describe('Bill API (/api/v1/billing)', () => {
     });
 
     it('rejects empty period', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .post('/api/v1/billing')
         .send({ ...minimalPayload(), period: '   ' });
 
@@ -181,7 +186,7 @@ describe('Bill API (/api/v1/billing)', () => {
     });
 
     it('rejects missing amount', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .post('/api/v1/billing')
         .send({ unit: sampleUnit._id.toString(), period: 'Jan 2026' });
 
@@ -190,7 +195,7 @@ describe('Bill API (/api/v1/billing)', () => {
     });
 
     it('rejects amount of 0', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .post('/api/v1/billing')
         .send({ ...minimalPayload(), amount: 0 });
 
@@ -199,7 +204,7 @@ describe('Bill API (/api/v1/billing)', () => {
     });
 
     it('rejects negative amount', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .post('/api/v1/billing')
         .send({ ...minimalPayload(), amount: -100 });
 
@@ -208,7 +213,7 @@ describe('Bill API (/api/v1/billing)', () => {
     });
 
     it('rejects non-numeric amount', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .post('/api/v1/billing')
         .send({ ...minimalPayload(), amount: 'abc' });
 
@@ -217,7 +222,7 @@ describe('Bill API (/api/v1/billing)', () => {
     });
 
     it('rejects invalid dueDate format', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .post('/api/v1/billing')
         .send({ ...minimalPayload(), dueDate: 'not-a-date' });
 
@@ -226,7 +231,7 @@ describe('Bill API (/api/v1/billing)', () => {
     });
 
     it('trims period', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .post('/api/v1/billing')
         .send({ ...minimalPayload(), period: '  Mar 2026  ' });
 
@@ -235,7 +240,7 @@ describe('Bill API (/api/v1/billing)', () => {
     });
 
     it('trims billNo', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .post('/api/v1/billing')
         .send({ ...minimalPayload(), billNo: '  BILL-TRIM-001  ' });
 
@@ -246,7 +251,7 @@ describe('Bill API (/api/v1/billing)', () => {
 
   describe('GET /api/v1/billing', () => {
     it('returns an empty list when no bills exist', async () => {
-      const res = await request(app).get('/api/v1/billing');
+      const res = await authRequest(app, authToken).get('/api/v1/billing');
 
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
@@ -255,7 +260,7 @@ describe('Bill API (/api/v1/billing)', () => {
 
     it('returns bills with populated Unit and Building data', async () => {
       await Bill.create(validPayload());
-      const res = await request(app).get('/api/v1/billing');
+      const res = await authRequest(app, authToken).get('/api/v1/billing');
 
       expect(res.status).toBe(200);
       expect(res.body.data).toHaveLength(1);
@@ -271,7 +276,7 @@ describe('Bill API (/api/v1/billing)', () => {
       await Bill.updateOne({ _id: older._id }, { $set: { createdAt: new Date('2026-01-01') } });
       await Bill.create({ ...minimalPayload(), period: 'Feb 2026', amount: 4000 });
 
-      const res = await request(app).get('/api/v1/billing');
+      const res = await authRequest(app, authToken).get('/api/v1/billing');
 
       expect(res.body.data).toHaveLength(2);
       expect(res.body.data[0].period).toBe('Feb 2026');
@@ -282,7 +287,7 @@ describe('Bill API (/api/v1/billing)', () => {
       await Bill.create({ ...validPayload(), billNo: 'BILL-SEARCH-001' });
       await Bill.create({ ...minimalPayload(), billNo: 'BILL-OTHER-002' });
 
-      const res = await request(app).get('/api/v1/billing?search=SEARCH');
+      const res = await authRequest(app, authToken).get('/api/v1/billing?search=SEARCH');
 
       expect(res.body.data).toHaveLength(1);
       expect(res.body.data[0].billNo).toBe('BILL-SEARCH-001');
@@ -292,7 +297,7 @@ describe('Bill API (/api/v1/billing)', () => {
       await Bill.create(validPayload());
       await Bill.create({ ...minimalPayload(), period: 'Mar 2026' });
 
-      const res = await request(app).get('/api/v1/billing?search=Jan');
+      const res = await authRequest(app, authToken).get('/api/v1/billing?search=Jan');
 
       expect(res.body.data).toHaveLength(1);
       expect(res.body.data[0].period).toBe('Jan 2026');
@@ -302,7 +307,7 @@ describe('Bill API (/api/v1/billing)', () => {
       await Bill.create(validPayload());
       await Bill.create({ ...minimalPayload(), description: 'Special assessment' });
 
-      const res = await request(app).get('/api/v1/billing?search=maintenance');
+      const res = await authRequest(app, authToken).get('/api/v1/billing?search=maintenance');
 
       expect(res.body.data).toHaveLength(1);
       expect(res.body.data[0].description).toBe('Monthly maintenance charge');
@@ -311,7 +316,7 @@ describe('Bill API (/api/v1/billing)', () => {
     it('searches case-insensitively', async () => {
       await Bill.create(validPayload());
 
-      const res = await request(app).get('/api/v1/billing?search=JAN');
+      const res = await authRequest(app, authToken).get('/api/v1/billing?search=JAN');
 
       expect(res.body.data).toHaveLength(1);
     });
@@ -319,7 +324,7 @@ describe('Bill API (/api/v1/billing)', () => {
     it('treats regex metacharacters in search as plain text', async () => {
       await Bill.create({ ...validPayload(), description: 'A (B) bill' });
 
-      const res = await request(app).get('/api/v1/billing?search=(B)');
+      const res = await authRequest(app, authToken).get('/api/v1/billing?search=(B)');
 
       expect(res.body.data).toHaveLength(1);
       expect(res.body.data[0].description).toBe('A (B) bill');
@@ -332,7 +337,7 @@ describe('Bill API (/api/v1/billing)', () => {
         unit: secondaryUnit._id.toString(),
       });
 
-      const res = await request(app).get(
+      const res = await authRequest(app, authToken).get(
         `/api/v1/billing?building=${sampleBuilding._id}`
       );
 
@@ -344,7 +349,7 @@ describe('Bill API (/api/v1/billing)', () => {
       await Bill.create(validPayload());
       await Bill.create({ ...minimalPayload(), status: 'paid', paidAt: new Date() });
 
-      const res = await request(app).get('/api/v1/billing?status=pending');
+      const res = await authRequest(app, authToken).get('/api/v1/billing?status=pending');
 
       expect(res.body.data).toHaveLength(1);
       expect(res.body.data[0].status).toBe('pending');
@@ -358,7 +363,7 @@ describe('Bill API (/api/v1/billing)', () => {
         billNo: 'BILL-COMBO-002',
       });
 
-      const res = await request(app).get(
+      const res = await authRequest(app, authToken).get(
         `/api/v1/billing?search=COMBO&building=${sampleBuilding._id}`
       );
 
@@ -368,7 +373,7 @@ describe('Bill API (/api/v1/billing)', () => {
 
     it('returns empty array for invalid building ID in filter', async () => {
       await Bill.create(validPayload());
-      const res = await request(app).get('/api/v1/billing?building=invalid-id');
+      const res = await authRequest(app, authToken).get('/api/v1/billing?building=invalid-id');
 
       expect(res.status).toBe(200);
       expect(res.body.data).toEqual([]);
@@ -376,7 +381,7 @@ describe('Bill API (/api/v1/billing)', () => {
 
     it('returns empty array for invalid status in filter', async () => {
       await Bill.create(validPayload());
-      const res = await request(app).get('/api/v1/billing?status=invalid');
+      const res = await authRequest(app, authToken).get('/api/v1/billing?status=invalid');
 
       expect(res.status).toBe(200);
       expect(res.body.data).toEqual([]);
@@ -386,7 +391,7 @@ describe('Bill API (/api/v1/billing)', () => {
   describe('GET /api/v1/billing/:id', () => {
     it('returns one populated bill', async () => {
       const created = await Bill.create(validPayload());
-      const res = await request(app).get(`/api/v1/billing/${created._id}`);
+      const res = await authRequest(app, authToken).get(`/api/v1/billing/${created._id}`);
 
       expect(res.status).toBe(200);
       expect(res.body.data.period).toBe('Jan 2026');
@@ -396,8 +401,8 @@ describe('Bill API (/api/v1/billing)', () => {
     });
 
     it('returns 404 for invalid and nonexistent IDs', async () => {
-      const invalid = await request(app).get('/api/v1/billing/invalid-id');
-      const nonexistent = await request(app)
+      const invalid = await authRequest(app, authToken).get('/api/v1/billing/invalid-id');
+      const nonexistent = await authRequest(app, authToken)
         .get(`/api/v1/billing/${new mongoose.Types.ObjectId()}`);
 
       expect(invalid.status).toBe(404);
@@ -410,7 +415,7 @@ describe('Bill API (/api/v1/billing)', () => {
   describe('PATCH /api/v1/billing/:id', () => {
     it('updates period, amount, description, and status', async () => {
       const created = await Bill.create(validPayload());
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .patch(`/api/v1/billing/${created._id}`)
         .send({
           period: 'Mar 2026',
@@ -430,7 +435,7 @@ describe('Bill API (/api/v1/billing)', () => {
 
     it('updates dueDate', async () => {
       const created = await Bill.create(validPayload());
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .patch(`/api/v1/billing/${created._id}`)
         .send({ dueDate: '2026-03-31' });
 
@@ -441,7 +446,7 @@ describe('Bill API (/api/v1/billing)', () => {
 
     it('clears dueDate by setting to null', async () => {
       const created = await Bill.create(validPayload());
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .patch(`/api/v1/billing/${created._id}`)
         .send({ dueDate: null });
 
@@ -451,7 +456,7 @@ describe('Bill API (/api/v1/billing)', () => {
 
     it('rejects billNo change', async () => {
       const created = await Bill.create(validPayload());
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .patch(`/api/v1/billing/${created._id}`)
         .send({ billNo: 'BILL-CHANGED-001' });
 
@@ -461,7 +466,7 @@ describe('Bill API (/api/v1/billing)', () => {
 
     it('rejects unit change', async () => {
       const created = await Bill.create(validPayload());
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .patch(`/api/v1/billing/${created._id}`)
         .send({ unit: secondaryUnit._id.toString() });
 
@@ -471,7 +476,7 @@ describe('Bill API (/api/v1/billing)', () => {
 
     it('sets paidAt when status changes from pending to paid', async () => {
       const created = await Bill.create(validPayload());
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .patch(`/api/v1/billing/${created._id}`)
         .send({ status: 'paid' });
 
@@ -482,7 +487,7 @@ describe('Bill API (/api/v1/billing)', () => {
 
     it('sets paidAt when status changes from overdue to paid', async () => {
       const created = await Bill.create({ ...validPayload(), status: 'overdue' });
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .patch(`/api/v1/billing/${created._id}`)
         .send({ status: 'paid' });
 
@@ -498,7 +503,7 @@ describe('Bill API (/api/v1/billing)', () => {
         status: 'paid',
         paidAt: existingPaidAt,
       });
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .patch(`/api/v1/billing/${created._id}`)
         .send({ description: 'Updated' });
 
@@ -512,7 +517,7 @@ describe('Bill API (/api/v1/billing)', () => {
         status: 'paid',
         paidAt: new Date(),
       });
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .patch(`/api/v1/billing/${created._id}`)
         .send({ status: 'pending' });
 
@@ -527,7 +532,7 @@ describe('Bill API (/api/v1/billing)', () => {
         status: 'paid',
         paidAt: new Date(),
       });
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .patch(`/api/v1/billing/${created._id}`)
         .send({ status: 'overdue' });
 
@@ -538,7 +543,7 @@ describe('Bill API (/api/v1/billing)', () => {
 
     it('rejects empty period on update', async () => {
       const created = await Bill.create(validPayload());
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .patch(`/api/v1/billing/${created._id}`)
         .send({ period: '   ' });
 
@@ -548,7 +553,7 @@ describe('Bill API (/api/v1/billing)', () => {
 
     it('rejects amount of 0 on update', async () => {
       const created = await Bill.create(validPayload());
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .patch(`/api/v1/billing/${created._id}`)
         .send({ amount: 0 });
 
@@ -558,7 +563,7 @@ describe('Bill API (/api/v1/billing)', () => {
 
     it('rejects negative amount on update', async () => {
       const created = await Bill.create(validPayload());
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .patch(`/api/v1/billing/${created._id}`)
         .send({ amount: -50 });
 
@@ -568,7 +573,7 @@ describe('Bill API (/api/v1/billing)', () => {
 
     it('rejects non-numeric amount on update', async () => {
       const created = await Bill.create(validPayload());
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .patch(`/api/v1/billing/${created._id}`)
         .send({ amount: 'abc' });
 
@@ -578,7 +583,7 @@ describe('Bill API (/api/v1/billing)', () => {
 
     it('rejects invalid status on update', async () => {
       const created = await Bill.create(validPayload());
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .patch(`/api/v1/billing/${created._id}`)
         .send({ status: 'invalid-status' });
 
@@ -588,7 +593,7 @@ describe('Bill API (/api/v1/billing)', () => {
 
     it('rejects invalid dueDate on update', async () => {
       const created = await Bill.create(validPayload());
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .patch(`/api/v1/billing/${created._id}`)
         .send({ dueDate: 'not-a-date' });
 
@@ -597,7 +602,7 @@ describe('Bill API (/api/v1/billing)', () => {
     });
 
     it('returns 404 for nonexistent bill', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .patch(`/api/v1/billing/${new mongoose.Types.ObjectId()}`)
         .send({ amount: 100 });
 
@@ -609,7 +614,7 @@ describe('Bill API (/api/v1/billing)', () => {
   describe('DELETE /api/v1/billing/:id', () => {
     it('deletes only the bill record', async () => {
       const created = await Bill.create(validPayload());
-      const res = await request(app).delete(`/api/v1/billing/${created._id}`);
+      const res = await authRequest(app, authToken).delete(`/api/v1/billing/${created._id}`);
 
       expect(res.status).toBe(200);
       expect(res.body.message).toBe('Bill deleted successfully');
@@ -619,7 +624,7 @@ describe('Bill API (/api/v1/billing)', () => {
     });
 
     it('returns 404 for a nonexistent bill', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .delete(`/api/v1/billing/${new mongoose.Types.ObjectId()}`);
 
       expect(res.status).toBe(404);
@@ -635,7 +640,7 @@ describe('Bill API (/api/v1/billing)', () => {
         status: 'completed',
       });
 
-      const res = await request(app).delete(`/api/v1/billing/${bill._id}`);
+      const res = await authRequest(app, authToken).delete(`/api/v1/billing/${bill._id}`);
 
       expect(res.status).toBe(400);
       expect(res.body.message).toMatch(/cannot delete bill with existing payments/i);

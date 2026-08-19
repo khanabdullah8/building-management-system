@@ -9,8 +9,10 @@ const Building = require('../src/models/Building');
 const Unit = require('../src/models/Unit');
 const Complaint = require('../src/models/Complaint');
 const { startMemoryDb, stopMemoryDb } = require('./helpers/db');
+const { createTestAdmin, removeTestAdmin, getAuthToken, authRequest } = require('./helpers/auth');
 
 describe('Complaints API (/api/v1/complaints)', () => {
+  let authToken;
   let sampleBuilding;
   let secondaryBuilding;
   let sampleUnit;
@@ -34,9 +36,12 @@ describe('Complaints API (/api/v1/complaints)', () => {
 
   beforeAll(async () => {
     await startMemoryDb();
+    const admin = await createTestAdmin();
+    authToken = `Bearer ${getAuthToken(admin)}`;
   });
 
   afterAll(async () => {
+    await removeTestAdmin();
     await stopMemoryDb();
   });
 
@@ -65,7 +70,7 @@ describe('Complaints API (/api/v1/complaints)', () => {
 
   describe('POST /api/v1/complaints', () => {
     it('creates a Complaint with a Unit and populates Unit and Building data', async () => {
-      const res = await request(app).post('/api/v1/complaints').send(validUnitPayload());
+      const res = await authRequest(app, authToken).post('/api/v1/complaints').send(validUnitPayload());
 
       expect(res.status).toBe(201);
       expect(res.body.success).toBe(true);
@@ -87,7 +92,7 @@ describe('Complaints API (/api/v1/complaints)', () => {
     });
 
     it('creates a common-area Complaint with location and unit null', async () => {
-      const res = await request(app).post('/api/v1/complaints').send(validLocationPayload());
+      const res = await authRequest(app, authToken).post('/api/v1/complaints').send(validLocationPayload());
 
       expect(res.status).toBe(201);
       expect(res.body.success).toBe(true);
@@ -103,10 +108,10 @@ describe('Complaints API (/api/v1/complaints)', () => {
     });
 
     it('rejects missing and empty subjects', async () => {
-      const missing = await request(app)
+      const missing = await authRequest(app, authToken)
         .post('/api/v1/complaints')
         .send({ ...validUnitPayload(), subject: undefined });
-      const empty = await request(app)
+      const empty = await authRequest(app, authToken)
         .post('/api/v1/complaints')
         .send({ ...validUnitPayload(), subject: '   ' });
 
@@ -117,7 +122,7 @@ describe('Complaints API (/api/v1/complaints)', () => {
     });
 
     it('rejects missing unit and location', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .post('/api/v1/complaints')
         .send({
           subject: 'Broken window',
@@ -131,10 +136,10 @@ describe('Complaints API (/api/v1/complaints)', () => {
     });
 
     it('rejects invalid Unit ID and nonexistent Unit', async () => {
-      const invalid = await request(app)
+      const invalid = await authRequest(app, authToken)
         .post('/api/v1/complaints')
         .send({ ...validUnitPayload(), unit: 'invalid-id' });
-      const nonexistent = await request(app)
+      const nonexistent = await authRequest(app, authToken)
         .post('/api/v1/complaints')
         .send({ ...validUnitPayload(), unit: new mongoose.Types.ObjectId().toString() });
 
@@ -144,7 +149,7 @@ describe('Complaints API (/api/v1/complaints)', () => {
     });
 
     it('rejects invalid priority', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .post('/api/v1/complaints')
         .send({ ...validUnitPayload(), priority: 'critical' });
 
@@ -153,7 +158,7 @@ describe('Complaints API (/api/v1/complaints)', () => {
     });
 
     it('rejects invalid status', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .post('/api/v1/complaints')
         .send({ ...validUnitPayload(), status: 'cancelled' });
 
@@ -162,7 +167,7 @@ describe('Complaints API (/api/v1/complaints)', () => {
     });
 
     it('accepts omitted description (defaults to empty string)', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .post('/api/v1/complaints')
         .send({ ...validUnitPayload(), description: undefined });
 
@@ -171,7 +176,7 @@ describe('Complaints API (/api/v1/complaints)', () => {
     });
 
     it('rejects non-string description', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .post('/api/v1/complaints')
         .send({ ...validUnitPayload(), description: 12345 });
 
@@ -180,8 +185,8 @@ describe('Complaints API (/api/v1/complaints)', () => {
     });
 
     it('allows multiple Complaints for the same Unit', async () => {
-      const first = await request(app).post('/api/v1/complaints').send(validUnitPayload());
-      const second = await request(app)
+      const first = await authRequest(app, authToken).post('/api/v1/complaints').send(validUnitPayload());
+      const second = await authRequest(app, authToken)
         .post('/api/v1/complaints')
         .send({ ...validUnitPayload(), subject: 'Lift noise', priority: 'medium' });
 
@@ -191,8 +196,8 @@ describe('Complaints API (/api/v1/complaints)', () => {
     });
 
     it('allows multiple common-area Complaints for the same location', async () => {
-      const first = await request(app).post('/api/v1/complaints').send(validLocationPayload());
-      const second = await request(app)
+      const first = await authRequest(app, authToken).post('/api/v1/complaints').send(validLocationPayload());
+      const second = await authRequest(app, authToken)
         .post('/api/v1/complaints')
         .send({ ...validLocationPayload(), subject: 'Broken light in lobby' });
 
@@ -201,7 +206,7 @@ describe('Complaints API (/api/v1/complaints)', () => {
     });
 
     it('rejects non-string location when unit is not provided', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .post('/api/v1/complaints')
         .send({ subject: 'Lobby issue', location: 123, priority: 'low', status: 'open' });
 
@@ -210,7 +215,7 @@ describe('Complaints API (/api/v1/complaints)', () => {
     });
 
     it('rejects non-string location even when valid unit is provided', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .post('/api/v1/complaints')
         .send({ ...validUnitPayload(), location: 123 });
 
@@ -219,7 +224,7 @@ describe('Complaints API (/api/v1/complaints)', () => {
     });
 
     it('rejects empty location when unit is not provided', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .post('/api/v1/complaints')
         .send({ subject: 'Lobby issue', location: '   ', priority: 'low', status: 'open' });
 
@@ -230,7 +235,7 @@ describe('Complaints API (/api/v1/complaints)', () => {
 
   describe('GET /api/v1/complaints', () => {
     it('returns an empty list when no complaints exist', async () => {
-      const res = await request(app).get('/api/v1/complaints');
+      const res = await authRequest(app, authToken).get('/api/v1/complaints');
 
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
@@ -239,7 +244,7 @@ describe('Complaints API (/api/v1/complaints)', () => {
 
     it('returns Complaints with populated Unit and Building data', async () => {
       await Complaint.create(validUnitPayload());
-      const res = await request(app).get('/api/v1/complaints');
+      const res = await authRequest(app, authToken).get('/api/v1/complaints');
 
       expect(res.status).toBe(200);
       expect(res.body.data).toHaveLength(1);
@@ -251,7 +256,7 @@ describe('Complaints API (/api/v1/complaints)', () => {
 
     it('returns common-area Complaints with unit null and location preserved', async () => {
       await Complaint.create(validLocationPayload());
-      const res = await request(app).get('/api/v1/complaints');
+      const res = await authRequest(app, authToken).get('/api/v1/complaints');
 
       expect(res.status).toBe(200);
       expect(res.body.data).toHaveLength(1);
@@ -267,7 +272,7 @@ describe('Complaints API (/api/v1/complaints)', () => {
         status: 'in-progress',
       }]);
 
-      const bySubject = await request(app).get('/api/v1/complaints?search=lift');
+      const bySubject = await authRequest(app, authToken).get('/api/v1/complaints?search=lift');
 
       expect(bySubject.body.data).toHaveLength(1);
       expect(bySubject.body.data[0].subject).toBe('Lift noise on floor 9');
@@ -281,9 +286,9 @@ describe('Complaints API (/api/v1/complaints)', () => {
         status: 'open',
       }]);
 
-      const specialSubject = await request(app).get('/api/v1/complaints?search=AC%20(model%20X)');
-      const danglingBracket = await request(app).get('/api/v1/complaints?search=%5B');
-      const literalDot = await request(app).get('/api/v1/complaints?search=AC.not');
+      const specialSubject = await authRequest(app, authToken).get('/api/v1/complaints?search=AC%20(model%20X)');
+      const danglingBracket = await authRequest(app, authToken).get('/api/v1/complaints?search=%5B');
+      const literalDot = await authRequest(app, authToken).get('/api/v1/complaints?search=AC.not');
 
       expect(specialSubject.status).toBe(200);
       expect(specialSubject.body.data).toHaveLength(1);
@@ -300,7 +305,7 @@ describe('Complaints API (/api/v1/complaints)', () => {
   describe('GET /api/v1/complaints/:id', () => {
     it('returns one populated Complaint', async () => {
       const created = await Complaint.create(validUnitPayload());
-      const res = await request(app).get(`/api/v1/complaints/${created._id}`);
+      const res = await authRequest(app, authToken).get(`/api/v1/complaints/${created._id}`);
 
       expect(res.status).toBe(200);
       expect(res.body.data.subject).toBe('Water leakage in kitchen');
@@ -310,7 +315,7 @@ describe('Complaints API (/api/v1/complaints)', () => {
 
     it('returns one common-area Complaint with unit null', async () => {
       const created = await Complaint.create(validLocationPayload());
-      const res = await request(app).get(`/api/v1/complaints/${created._id}`);
+      const res = await authRequest(app, authToken).get(`/api/v1/complaints/${created._id}`);
 
       expect(res.status).toBe(200);
       expect(res.body.data.subject).toBe('Stray dog near gate 2');
@@ -319,8 +324,8 @@ describe('Complaints API (/api/v1/complaints)', () => {
     });
 
     it('returns 404 for invalid and nonexistent Complaint IDs', async () => {
-      const invalid = await request(app).get('/api/v1/complaints/invalid-id');
-      const nonexistent = await request(app)
+      const invalid = await authRequest(app, authToken).get('/api/v1/complaints/invalid-id');
+      const nonexistent = await authRequest(app, authToken)
         .get(`/api/v1/complaints/${new mongoose.Types.ObjectId()}`);
 
       expect(invalid.status).toBe(404);
@@ -333,7 +338,7 @@ describe('Complaints API (/api/v1/complaints)', () => {
   describe('PATCH /api/v1/complaints/:id', () => {
     it('updates subject, description, priority, and status', async () => {
       const created = await Complaint.create(validUnitPayload());
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .patch(`/api/v1/complaints/${created._id}`)
         .send({ subject: ' Water leakage (resolved) ', description: ' Fixed. ', priority: 'low', status: 'resolved' });
 
@@ -348,7 +353,7 @@ describe('Complaints API (/api/v1/complaints)', () => {
 
     it('allows reassignment to another existing Unit', async () => {
       const created = await Complaint.create(validUnitPayload());
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .patch(`/api/v1/complaints/${created._id}`)
         .send({ unit: secondaryUnit._id.toString() });
 
@@ -359,7 +364,7 @@ describe('Complaints API (/api/v1/complaints)', () => {
 
     it('allows switching from Unit to common-area (unit null + location)', async () => {
       const created = await Complaint.create(validUnitPayload());
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .patch(`/api/v1/complaints/${created._id}`)
         .send({ unit: null, location: 'Rooftop terrace' });
 
@@ -370,7 +375,7 @@ describe('Complaints API (/api/v1/complaints)', () => {
 
     it('allows switching from common-area to Unit', async () => {
       const created = await Complaint.create(validLocationPayload());
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .patch(`/api/v1/complaints/${created._id}`)
         .send({ unit: sampleUnit._id.toString(), location: '' });
 
@@ -382,10 +387,10 @@ describe('Complaints API (/api/v1/complaints)', () => {
 
     it('rejects invalid and nonexistent Unit reassignment', async () => {
       const created = await Complaint.create(validUnitPayload());
-      const invalid = await request(app)
+      const invalid = await authRequest(app, authToken)
         .patch(`/api/v1/complaints/${created._id}`)
         .send({ unit: 'invalid-id' });
-      const nonexistent = await request(app)
+      const nonexistent = await authRequest(app, authToken)
         .patch(`/api/v1/complaints/${created._id}`)
         .send({ unit: new mongoose.Types.ObjectId().toString() });
 
@@ -395,7 +400,7 @@ describe('Complaints API (/api/v1/complaints)', () => {
 
     it('rejects setting unit null without location when existing location is empty', async () => {
       const created = await Complaint.create(validUnitPayload());
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .patch(`/api/v1/complaints/${created._id}`)
         .send({ unit: null });
 
@@ -406,7 +411,7 @@ describe('Complaints API (/api/v1/complaints)', () => {
 
     it('rejects non-string location on PATCH with valid unit', async () => {
       const created = await Complaint.create(validUnitPayload());
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .patch(`/api/v1/complaints/${created._id}`)
         .send({ location: 123 });
 
@@ -416,7 +421,7 @@ describe('Complaints API (/api/v1/complaints)', () => {
 
     it('rejects non-string location on PATCH for common-area complaint', async () => {
       const created = await Complaint.create(validLocationPayload());
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .patch(`/api/v1/complaints/${created._id}`)
         .send({ location: 123 });
 
@@ -426,19 +431,19 @@ describe('Complaints API (/api/v1/complaints)', () => {
 
     it('validates supplied update fields and returns 404 for a missing complaint', async () => {
       const created = await Complaint.create(validUnitPayload());
-      const emptySubject = await request(app)
+      const emptySubject = await authRequest(app, authToken)
         .patch(`/api/v1/complaints/${created._id}`)
         .send({ subject: ' ' });
-      const invalidPriority = await request(app)
+      const invalidPriority = await authRequest(app, authToken)
         .patch(`/api/v1/complaints/${created._id}`)
         .send({ priority: 'critical' });
-      const invalidStatus = await request(app)
+      const invalidStatus = await authRequest(app, authToken)
         .patch(`/api/v1/complaints/${created._id}`)
         .send({ status: 'cancelled' });
-      const invalidDesc = await request(app)
+      const invalidDesc = await authRequest(app, authToken)
         .patch(`/api/v1/complaints/${created._id}`)
         .send({ description: 123 });
-      const missing = await request(app)
+      const missing = await authRequest(app, authToken)
         .patch(`/api/v1/complaints/${new mongoose.Types.ObjectId()}`)
         .send({ subject: 'Missing' });
 
@@ -453,7 +458,7 @@ describe('Complaints API (/api/v1/complaints)', () => {
   describe('DELETE /api/v1/complaints/:id', () => {
     it('deletes only the Complaint', async () => {
       const created = await Complaint.create(validUnitPayload());
-      const res = await request(app).delete(`/api/v1/complaints/${created._id}`);
+      const res = await authRequest(app, authToken).delete(`/api/v1/complaints/${created._id}`);
 
       expect(res.status).toBe(200);
       expect(res.body.message).toBe('Complaint deleted successfully');
@@ -463,7 +468,7 @@ describe('Complaints API (/api/v1/complaints)', () => {
     });
 
     it('returns 404 for a nonexistent Complaint', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .delete(`/api/v1/complaints/${new mongoose.Types.ObjectId()}`);
 
       expect(res.status).toBe(404);

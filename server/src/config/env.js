@@ -34,10 +34,13 @@ function validateEnv() {
   }
 }
 
+const JWT_SECRET = process.env.JWT_SECRET;
+
 module.exports = {
   NODE_ENV,
   PORT,
   MONGO_URI,
+  JWT_SECRET,
   ALLOWED_ORIGINS,
   RATE_LIMIT_WINDOW_MS,
   RATE_LIMIT_MAX,

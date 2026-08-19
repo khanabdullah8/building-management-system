@@ -8,16 +8,21 @@ const app = require('../src/app');
 const Building = require('../src/models/Building');
 const Unit = require('../src/models/Unit');
 const { startMemoryDb, stopMemoryDb } = require('./helpers/db');
+const { createTestAdmin, removeTestAdmin, getAuthToken, authRequest } = require('./helpers/auth');
 
 describe('Units API (/api/v1/units)', () => {
+  let authToken;
   let sampleBuilding;
   let secondaryBuilding;
 
   beforeAll(async () => {
     await startMemoryDb();
+    const admin = await createTestAdmin();
+    authToken = `Bearer ${getAuthToken(admin)}`;
   });
 
   afterAll(async () => {
+    await removeTestAdmin();
     await stopMemoryDb();
   });
 
@@ -50,7 +55,7 @@ describe('Units API (/api/v1/units)', () => {
         status: 'occupied',
       };
 
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .post('/api/v1/units')
         .send(payload);
 
@@ -65,7 +70,7 @@ describe('Units API (/api/v1/units)', () => {
     });
 
     it('fails validation when unitNumber is missing', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .post('/api/v1/units')
         .send({ building: sampleBuilding._id.toString() });
 
@@ -75,7 +80,7 @@ describe('Units API (/api/v1/units)', () => {
     });
 
     it('fails validation when building ID is missing or invalid', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .post('/api/v1/units')
         .send({ unitNumber: 'A-101', building: 'invalid-id' });
 
@@ -86,7 +91,7 @@ describe('Units API (/api/v1/units)', () => {
     it('rejects creation when referenced building does not exist', async () => {
       const nonExistentBuildingId = new mongoose.Types.ObjectId().toString();
 
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .post('/api/v1/units')
         .send({ unitNumber: 'A-101', building: nonExistentBuildingId });
 
@@ -96,11 +101,11 @@ describe('Units API (/api/v1/units)', () => {
     });
 
     it('rejects duplicate unitNumber within the same building', async () => {
-      await request(app)
+      await authRequest(app, authToken)
         .post('/api/v1/units')
         .send({ unitNumber: 'A-1101', building: sampleBuilding._id.toString() });
 
-      const duplicateRes = await request(app)
+      const duplicateRes = await authRequest(app, authToken)
         .post('/api/v1/units')
         .send({ unitNumber: 'a-1101', building: sampleBuilding._id.toString() });
 
@@ -110,11 +115,11 @@ describe('Units API (/api/v1/units)', () => {
     });
 
     it('allows same unitNumber in a different building', async () => {
-      const res1 = await request(app)
+      const res1 = await authRequest(app, authToken)
         .post('/api/v1/units')
         .send({ unitNumber: '101', building: sampleBuilding._id.toString() });
 
-      const res2 = await request(app)
+      const res2 = await authRequest(app, authToken)
         .post('/api/v1/units')
         .send({ unitNumber: '101', building: secondaryBuilding._id.toString() });
 
@@ -125,7 +130,7 @@ describe('Units API (/api/v1/units)', () => {
 
   describe('GET /api/v1/units', () => {
     it('returns empty list when no units exist', async () => {
-      const res = await request(app).get('/api/v1/units');
+      const res = await authRequest(app, authToken).get('/api/v1/units');
 
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
@@ -138,7 +143,7 @@ describe('Units API (/api/v1/units)', () => {
         { unitNumber: 'B-0901', building: secondaryBuilding._id, type: '2BHK', floor: 9 },
       ]);
 
-      const res = await request(app).get('/api/v1/units');
+      const res = await authRequest(app, authToken).get('/api/v1/units');
 
       expect(res.status).toBe(200);
       expect(res.body.data.length).toBe(2);
@@ -152,14 +157,14 @@ describe('Units API (/api/v1/units)', () => {
         { unitNumber: 'B-0901', building: secondaryBuilding._id, type: '2BHK', status: 'occupied' },
       ]);
 
-      const resBuildingFilter = await request(app).get(`/api/v1/units?building=${sampleBuilding._id}`);
+      const resBuildingFilter = await authRequest(app, authToken).get(`/api/v1/units?building=${sampleBuilding._id}`);
       expect(resBuildingFilter.body.data.length).toBe(2);
 
-      const resStatusFilter = await request(app).get('/api/v1/units?status=vacant');
+      const resStatusFilter = await authRequest(app, authToken).get('/api/v1/units?status=vacant');
       expect(resStatusFilter.body.data.length).toBe(1);
       expect(resStatusFilter.body.data[0].unitNumber).toBe('A-1102');
 
-      const resSearch = await request(app).get('/api/v1/units?search=3BHK');
+      const resSearch = await authRequest(app, authToken).get('/api/v1/units?search=3BHK');
       expect(resSearch.body.data.length).toBe(1);
       expect(resSearch.body.data[0].unitNumber).toBe('A-1101');
     });
@@ -174,7 +179,7 @@ describe('Units API (/api/v1/units)', () => {
         floor: 5,
       });
 
-      const res = await request(app).get(`/api/v1/units/${created._id}`);
+      const res = await authRequest(app, authToken).get(`/api/v1/units/${created._id}`);
 
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
@@ -183,11 +188,11 @@ describe('Units API (/api/v1/units)', () => {
     });
 
     it('returns 404 for invalid or non-existent unit ID', async () => {
-      const resInvalid = await request(app).get('/api/v1/units/invalid-id');
+      const resInvalid = await authRequest(app, authToken).get('/api/v1/units/invalid-id');
       expect(resInvalid.status).toBe(404);
 
       const validNonExistentId = new mongoose.Types.ObjectId().toString();
-      const resMissing = await request(app).get(`/api/v1/units/${validNonExistentId}`);
+      const resMissing = await authRequest(app, authToken).get(`/api/v1/units/${validNonExistentId}`);
       expect(resMissing.status).toBe(404);
       expect(resMissing.body.message).toBe('Unit not found');
     });
@@ -201,7 +206,7 @@ describe('Units API (/api/v1/units)', () => {
         status: 'vacant',
       });
 
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .patch(`/api/v1/units/${created._id}`)
         .send({ status: 'occupied', floor: 2 });
 
@@ -213,7 +218,7 @@ describe('Units API (/api/v1/units)', () => {
 
     it('returns 404 when updating non-existent unit', async () => {
       const validNonExistentId = new mongoose.Types.ObjectId().toString();
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .patch(`/api/v1/units/${validNonExistentId}`)
         .send({ status: 'occupied' });
 
@@ -230,7 +235,7 @@ describe('Units API (/api/v1/units)', () => {
       });
       await Building.findByIdAndUpdate(sampleBuilding._id, { $inc: { units: 1 } });
 
-      const res = await request(app).delete(`/api/v1/units/${created._id}`);
+      const res = await authRequest(app, authToken).delete(`/api/v1/units/${created._id}`);
 
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
@@ -245,7 +250,7 @@ describe('Units API (/api/v1/units)', () => {
 
     it('returns 404 when deleting a valid ObjectId that does not exist', async () => {
       const validNonExistentId = new mongoose.Types.ObjectId().toString();
-      const res = await request(app).delete(`/api/v1/units/${validNonExistentId}`);
+      const res = await authRequest(app, authToken).delete(`/api/v1/units/${validNonExistentId}`);
 
       expect(res.status).toBe(404);
       expect(res.body.success).toBe(false);
@@ -253,7 +258,7 @@ describe('Units API (/api/v1/units)', () => {
     });
 
     it('returns 404 when deleting an invalid unit ID format', async () => {
-      const res = await request(app).delete('/api/v1/units/invalid-id-format');
+      const res = await authRequest(app, authToken).delete('/api/v1/units/invalid-id-format');
 
       expect(res.status).toBe(404);
       expect(res.body.success).toBe(false);

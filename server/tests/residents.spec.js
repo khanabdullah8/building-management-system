@@ -9,8 +9,10 @@ const Building = require('../src/models/Building');
 const Unit = require('../src/models/Unit');
 const Resident = require('../src/models/Resident');
 const { startMemoryDb, stopMemoryDb } = require('./helpers/db');
+const { createTestAdmin, removeTestAdmin, getAuthToken, authRequest } = require('./helpers/auth');
 
 describe('Residents API (/api/v1/residents)', () => {
+  let authToken;
   let sampleBuilding;
   let secondaryBuilding;
   let sampleUnit;
@@ -26,9 +28,12 @@ describe('Residents API (/api/v1/residents)', () => {
 
   beforeAll(async () => {
     await startMemoryDb();
+    const admin = await createTestAdmin();
+    authToken = `Bearer ${getAuthToken(admin)}`;
   });
 
   afterAll(async () => {
+    await removeTestAdmin();
     await stopMemoryDb();
   });
 
@@ -57,7 +62,7 @@ describe('Residents API (/api/v1/residents)', () => {
 
   describe('POST /api/v1/residents', () => {
     it('creates a Resident with populated Unit and Building data', async () => {
-      const res = await request(app).post('/api/v1/residents').send(validPayload());
+      const res = await authRequest(app, authToken).post('/api/v1/residents').send(validPayload());
 
       expect(res.status).toBe(201);
       expect(res.body.success).toBe(true);
@@ -78,10 +83,10 @@ describe('Residents API (/api/v1/residents)', () => {
     });
 
     it('rejects missing and empty names', async () => {
-      const missing = await request(app)
+      const missing = await authRequest(app, authToken)
         .post('/api/v1/residents')
         .send({ ...validPayload(), name: undefined });
-      const empty = await request(app)
+      const empty = await authRequest(app, authToken)
         .post('/api/v1/residents')
         .send({ ...validPayload(), name: '   ' });
 
@@ -92,13 +97,13 @@ describe('Residents API (/api/v1/residents)', () => {
     });
 
     it('rejects missing, invalid, and nonexistent Unit IDs', async () => {
-      const missing = await request(app)
+      const missing = await authRequest(app, authToken)
         .post('/api/v1/residents')
         .send({ ...validPayload(), unit: undefined });
-      const invalid = await request(app)
+      const invalid = await authRequest(app, authToken)
         .post('/api/v1/residents')
         .send({ ...validPayload(), unit: 'invalid-id' });
-      const nonexistent = await request(app)
+      const nonexistent = await authRequest(app, authToken)
         .post('/api/v1/residents')
         .send({ ...validPayload(), unit: new mongoose.Types.ObjectId().toString() });
 
@@ -109,10 +114,10 @@ describe('Residents API (/api/v1/residents)', () => {
     });
 
     it('rejects non-string phone values and accepts an omitted phone', async () => {
-      const invalid = await request(app)
+      const invalid = await authRequest(app, authToken)
         .post('/api/v1/residents')
         .send({ ...validPayload(), phone: 12345 });
-      const omitted = await request(app)
+      const omitted = await authRequest(app, authToken)
         .post('/api/v1/residents')
         .send({ ...validPayload(), phone: undefined });
 
@@ -123,8 +128,8 @@ describe('Residents API (/api/v1/residents)', () => {
     });
 
     it('allows duplicate phone numbers and multiple Residents in one Unit', async () => {
-      const first = await request(app).post('/api/v1/residents').send(validPayload());
-      const second = await request(app)
+      const first = await authRequest(app, authToken).post('/api/v1/residents').send(validPayload());
+      const second = await authRequest(app, authToken)
         .post('/api/v1/residents')
         .send({ ...validPayload(), name: 'Priya Menon', type: 'tenant' });
 
@@ -134,16 +139,16 @@ describe('Residents API (/api/v1/residents)', () => {
     });
 
     it('rejects missing or invalid type and status', async () => {
-      const missingType = await request(app)
+      const missingType = await authRequest(app, authToken)
         .post('/api/v1/residents')
         .send({ ...validPayload(), type: undefined });
-      const invalidType = await request(app)
+      const invalidType = await authRequest(app, authToken)
         .post('/api/v1/residents')
         .send({ ...validPayload(), type: 'guest' });
-      const missingStatus = await request(app)
+      const missingStatus = await authRequest(app, authToken)
         .post('/api/v1/residents')
         .send({ ...validPayload(), status: undefined });
-      const invalidStatus = await request(app)
+      const invalidStatus = await authRequest(app, authToken)
         .post('/api/v1/residents')
         .send({ ...validPayload(), status: 'pending' });
 
@@ -156,7 +161,7 @@ describe('Residents API (/api/v1/residents)', () => {
 
   describe('GET /api/v1/residents', () => {
     it('returns an empty list when no Residents exist', async () => {
-      const res = await request(app).get('/api/v1/residents');
+      const res = await authRequest(app, authToken).get('/api/v1/residents');
 
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
@@ -165,7 +170,7 @@ describe('Residents API (/api/v1/residents)', () => {
 
     it('returns Residents with populated Unit and Building data', async () => {
       await Resident.create(validPayload());
-      const res = await request(app).get('/api/v1/residents');
+      const res = await authRequest(app, authToken).get('/api/v1/residents');
 
       expect(res.status).toBe(200);
       expect(res.body.data).toHaveLength(1);
@@ -184,8 +189,8 @@ describe('Residents API (/api/v1/residents)', () => {
         status: 'active',
       }]);
 
-      const byName = await request(app).get('/api/v1/residents?search=priya');
-      const byPhone = await request(app).get('/api/v1/residents?search=99887');
+      const byName = await authRequest(app, authToken).get('/api/v1/residents?search=priya');
+      const byPhone = await authRequest(app, authToken).get('/api/v1/residents?search=99887');
 
       expect(byName.body.data).toHaveLength(1);
       expect(byName.body.data[0].name).toBe('Priya Menon');
@@ -202,9 +207,9 @@ describe('Residents API (/api/v1/residents)', () => {
         status: 'active',
       }]);
 
-      const specialName = await request(app).get('/api/v1/residents?search=Priya%20(Menon)');
-      const danglingBracket = await request(app).get('/api/v1/residents?search=%5B');
-      const literalDot = await request(app).get('/api/v1/residents?search=98123.45670');
+      const specialName = await authRequest(app, authToken).get('/api/v1/residents?search=Priya%20(Menon)');
+      const danglingBracket = await authRequest(app, authToken).get('/api/v1/residents?search=%5B');
+      const literalDot = await authRequest(app, authToken).get('/api/v1/residents?search=98123.45670');
 
       expect(specialName.status).toBe(200);
       expect(specialName.body.data).toHaveLength(1);
@@ -221,7 +226,7 @@ describe('Residents API (/api/v1/residents)', () => {
   describe('GET /api/v1/residents/:id', () => {
     it('returns one populated Resident', async () => {
       const created = await Resident.create(validPayload());
-      const res = await request(app).get(`/api/v1/residents/${created._id}`);
+      const res = await authRequest(app, authToken).get(`/api/v1/residents/${created._id}`);
 
       expect(res.status).toBe(200);
       expect(res.body.data.name).toBe('Rahul Sharma');
@@ -230,8 +235,8 @@ describe('Residents API (/api/v1/residents)', () => {
     });
 
     it('returns 404 for invalid and nonexistent Resident IDs', async () => {
-      const invalid = await request(app).get('/api/v1/residents/invalid-id');
-      const nonexistent = await request(app)
+      const invalid = await authRequest(app, authToken).get('/api/v1/residents/invalid-id');
+      const nonexistent = await authRequest(app, authToken)
         .get(`/api/v1/residents/${new mongoose.Types.ObjectId()}`);
 
       expect(invalid.status).toBe(404);
@@ -244,7 +249,7 @@ describe('Residents API (/api/v1/residents)', () => {
   describe('PATCH /api/v1/residents/:id', () => {
     it('updates name, phone, type, and status', async () => {
       const created = await Resident.create(validPayload());
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .patch(`/api/v1/residents/${created._id}`)
         .send({ name: ' Rahul Verma ', phone: ' 55555 ', type: 'tenant', status: 'inactive' });
 
@@ -259,7 +264,7 @@ describe('Residents API (/api/v1/residents)', () => {
 
     it('allows reassignment to another existing Unit', async () => {
       const created = await Resident.create(validPayload());
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .patch(`/api/v1/residents/${created._id}`)
         .send({ unit: secondaryUnit._id.toString() });
 
@@ -270,10 +275,10 @@ describe('Residents API (/api/v1/residents)', () => {
 
     it('rejects invalid and nonexistent Unit reassignment', async () => {
       const created = await Resident.create(validPayload());
-      const invalid = await request(app)
+      const invalid = await authRequest(app, authToken)
         .patch(`/api/v1/residents/${created._id}`)
         .send({ unit: 'invalid-id' });
-      const nonexistent = await request(app)
+      const nonexistent = await authRequest(app, authToken)
         .patch(`/api/v1/residents/${created._id}`)
         .send({ unit: new mongoose.Types.ObjectId().toString() });
 
@@ -283,19 +288,19 @@ describe('Residents API (/api/v1/residents)', () => {
 
     it('validates supplied update fields and returns 404 for a missing Resident', async () => {
       const created = await Resident.create(validPayload());
-      const emptyName = await request(app)
+      const emptyName = await authRequest(app, authToken)
         .patch(`/api/v1/residents/${created._id}`)
         .send({ name: ' ' });
-      const invalidPhone = await request(app)
+      const invalidPhone = await authRequest(app, authToken)
         .patch(`/api/v1/residents/${created._id}`)
         .send({ phone: 123 });
-      const invalidType = await request(app)
+      const invalidType = await authRequest(app, authToken)
         .patch(`/api/v1/residents/${created._id}`)
         .send({ type: 'guest' });
-      const invalidStatus = await request(app)
+      const invalidStatus = await authRequest(app, authToken)
         .patch(`/api/v1/residents/${created._id}`)
         .send({ status: 'pending' });
-      const missing = await request(app)
+      const missing = await authRequest(app, authToken)
         .patch(`/api/v1/residents/${new mongoose.Types.ObjectId()}`)
         .send({ name: 'Missing' });
 
@@ -310,7 +315,7 @@ describe('Residents API (/api/v1/residents)', () => {
   describe('DELETE /api/v1/residents/:id', () => {
     it('deletes only the Resident', async () => {
       const created = await Resident.create(validPayload());
-      const res = await request(app).delete(`/api/v1/residents/${created._id}`);
+      const res = await authRequest(app, authToken).delete(`/api/v1/residents/${created._id}`);
 
       expect(res.status).toBe(200);
       expect(res.body.message).toBe('Resident deleted successfully');
@@ -320,7 +325,7 @@ describe('Residents API (/api/v1/residents)', () => {
     });
 
     it('returns 404 for a nonexistent Resident', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .delete(`/api/v1/residents/${new mongoose.Types.ObjectId()}`);
 
       expect(res.status).toBe(404);

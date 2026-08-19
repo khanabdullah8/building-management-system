@@ -9,8 +9,10 @@ const Building = require('../src/models/Building');
 const Unit = require('../src/models/Unit');
 const Maintenance = require('../src/models/Maintenance');
 const { startMemoryDb, stopMemoryDb } = require('./helpers/db');
+const { createTestAdmin, removeTestAdmin, getAuthToken, authRequest } = require('./helpers/auth');
 
 describe('Maintenance API (/api/v1/maintenance)', () => {
+  let authToken;
   let sampleBuilding;
   let secondaryBuilding;
   let sampleUnit;
@@ -27,9 +29,12 @@ describe('Maintenance API (/api/v1/maintenance)', () => {
 
   beforeAll(async () => {
     await startMemoryDb();
+    const admin = await createTestAdmin();
+    authToken = `Bearer ${getAuthToken(admin)}`;
   });
 
   afterAll(async () => {
+    await removeTestAdmin();
     await stopMemoryDb();
   });
 
@@ -58,7 +63,7 @@ describe('Maintenance API (/api/v1/maintenance)', () => {
 
   describe('POST /api/v1/maintenance', () => {
     it('creates a Maintenance request with populated Unit and Building data', async () => {
-      const res = await request(app).post('/api/v1/maintenance').send(validPayload());
+      const res = await authRequest(app, authToken).post('/api/v1/maintenance').send(validPayload());
 
       expect(res.status).toBe(201);
       expect(res.body.success).toBe(true);
@@ -80,10 +85,10 @@ describe('Maintenance API (/api/v1/maintenance)', () => {
     });
 
     it('rejects missing and empty titles', async () => {
-      const missing = await request(app)
+      const missing = await authRequest(app, authToken)
         .post('/api/v1/maintenance')
         .send({ ...validPayload(), title: undefined });
-      const empty = await request(app)
+      const empty = await authRequest(app, authToken)
         .post('/api/v1/maintenance')
         .send({ ...validPayload(), title: '   ' });
 
@@ -94,7 +99,7 @@ describe('Maintenance API (/api/v1/maintenance)', () => {
     });
 
     it('rejects missing Unit', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .post('/api/v1/maintenance')
         .send({ ...validPayload(), unit: undefined });
 
@@ -103,10 +108,10 @@ describe('Maintenance API (/api/v1/maintenance)', () => {
     });
 
     it('rejects invalid Unit ID and nonexistent Unit', async () => {
-      const invalid = await request(app)
+      const invalid = await authRequest(app, authToken)
         .post('/api/v1/maintenance')
         .send({ ...validPayload(), unit: 'invalid-id' });
-      const nonexistent = await request(app)
+      const nonexistent = await authRequest(app, authToken)
         .post('/api/v1/maintenance')
         .send({ ...validPayload(), unit: new mongoose.Types.ObjectId().toString() });
 
@@ -116,7 +121,7 @@ describe('Maintenance API (/api/v1/maintenance)', () => {
     });
 
     it('rejects invalid priority', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .post('/api/v1/maintenance')
         .send({ ...validPayload(), priority: 'critical' });
 
@@ -125,7 +130,7 @@ describe('Maintenance API (/api/v1/maintenance)', () => {
     });
 
     it('rejects invalid status', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .post('/api/v1/maintenance')
         .send({ ...validPayload(), status: 'cancelled' });
 
@@ -134,7 +139,7 @@ describe('Maintenance API (/api/v1/maintenance)', () => {
     });
 
     it('accepts optional description and assignedTo', async () => {
-      const omitted = await request(app)
+      const omitted = await authRequest(app, authToken)
         .post('/api/v1/maintenance')
         .send({ ...validPayload(), description: undefined, assignedTo: undefined });
 
@@ -144,10 +149,10 @@ describe('Maintenance API (/api/v1/maintenance)', () => {
     });
 
     it('rejects non-string description and assignedTo', async () => {
-      const badDesc = await request(app)
+      const badDesc = await authRequest(app, authToken)
         .post('/api/v1/maintenance')
         .send({ ...validPayload(), description: 12345 });
-      const badAssign = await request(app)
+      const badAssign = await authRequest(app, authToken)
         .post('/api/v1/maintenance')
         .send({ ...validPayload(), assignedTo: 12345 });
 
@@ -158,8 +163,8 @@ describe('Maintenance API (/api/v1/maintenance)', () => {
     });
 
     it('allows multiple Maintenance requests for the same Unit', async () => {
-      const first = await request(app).post('/api/v1/maintenance').send(validPayload());
-      const second = await request(app)
+      const first = await authRequest(app, authToken).post('/api/v1/maintenance').send(validPayload());
+      const second = await authRequest(app, authToken)
         .post('/api/v1/maintenance')
         .send({ ...validPayload(), title: 'Water heater repair', priority: 'medium' });
 
@@ -171,7 +176,7 @@ describe('Maintenance API (/api/v1/maintenance)', () => {
 
   describe('GET /api/v1/maintenance', () => {
     it('returns an empty list when no requests exist', async () => {
-      const res = await request(app).get('/api/v1/maintenance');
+      const res = await authRequest(app, authToken).get('/api/v1/maintenance');
 
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
@@ -180,7 +185,7 @@ describe('Maintenance API (/api/v1/maintenance)', () => {
 
     it('returns Maintenance requests with populated Unit and Building data', async () => {
       await Maintenance.create(validPayload());
-      const res = await request(app).get('/api/v1/maintenance');
+      const res = await authRequest(app, authToken).get('/api/v1/maintenance');
 
       expect(res.status).toBe(200);
       expect(res.body.data).toHaveLength(1);
@@ -198,7 +203,7 @@ describe('Maintenance API (/api/v1/maintenance)', () => {
         status: 'open',
       }]);
 
-      const byTitle = await request(app).get('/api/v1/maintenance?search=water');
+      const byTitle = await authRequest(app, authToken).get('/api/v1/maintenance?search=water');
 
       expect(byTitle.body.data).toHaveLength(1);
       expect(byTitle.body.data[0].title).toBe('Water heater repair');
@@ -212,9 +217,9 @@ describe('Maintenance API (/api/v1/maintenance)', () => {
         status: 'open',
       }]);
 
-      const specialTitle = await request(app).get('/api/v1/maintenance?search=AC%20(model%20X)');
-      const danglingBracket = await request(app).get('/api/v1/maintenance?search=%5B');
-      const literalDot = await request(app).get('/api/v1/maintenance?search=AC.not');
+      const specialTitle = await authRequest(app, authToken).get('/api/v1/maintenance?search=AC%20(model%20X)');
+      const danglingBracket = await authRequest(app, authToken).get('/api/v1/maintenance?search=%5B');
+      const literalDot = await authRequest(app, authToken).get('/api/v1/maintenance?search=AC.not');
 
       expect(specialTitle.status).toBe(200);
       expect(specialTitle.body.data).toHaveLength(1);
@@ -231,7 +236,7 @@ describe('Maintenance API (/api/v1/maintenance)', () => {
   describe('GET /api/v1/maintenance/:id', () => {
     it('returns one populated Maintenance request', async () => {
       const created = await Maintenance.create(validPayload());
-      const res = await request(app).get(`/api/v1/maintenance/${created._id}`);
+      const res = await authRequest(app, authToken).get(`/api/v1/maintenance/${created._id}`);
 
       expect(res.status).toBe(200);
       expect(res.body.data.title).toBe('AC not cooling');
@@ -240,8 +245,8 @@ describe('Maintenance API (/api/v1/maintenance)', () => {
     });
 
     it('returns 404 for invalid and nonexistent Maintenance IDs', async () => {
-      const invalid = await request(app).get('/api/v1/maintenance/invalid-id');
-      const nonexistent = await request(app)
+      const invalid = await authRequest(app, authToken).get('/api/v1/maintenance/invalid-id');
+      const nonexistent = await authRequest(app, authToken)
         .get(`/api/v1/maintenance/${new mongoose.Types.ObjectId()}`);
 
       expect(invalid.status).toBe(404);
@@ -254,7 +259,7 @@ describe('Maintenance API (/api/v1/maintenance)', () => {
   describe('PATCH /api/v1/maintenance/:id', () => {
     it('updates title, description, priority, assignedTo, and status', async () => {
       const created = await Maintenance.create(validPayload());
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .patch(`/api/v1/maintenance/${created._id}`)
         .send({ title: ' AC not cooling (resolved) ', description: ' Fixed. ', priority: 'low', assignedTo: ' Joseph Mathew ', status: 'completed' });
 
@@ -270,7 +275,7 @@ describe('Maintenance API (/api/v1/maintenance)', () => {
 
     it('allows reassignment to another existing Unit', async () => {
       const created = await Maintenance.create(validPayload());
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .patch(`/api/v1/maintenance/${created._id}`)
         .send({ unit: secondaryUnit._id.toString() });
 
@@ -281,10 +286,10 @@ describe('Maintenance API (/api/v1/maintenance)', () => {
 
     it('rejects invalid and nonexistent Unit reassignment', async () => {
       const created = await Maintenance.create(validPayload());
-      const invalid = await request(app)
+      const invalid = await authRequest(app, authToken)
         .patch(`/api/v1/maintenance/${created._id}`)
         .send({ unit: 'invalid-id' });
-      const nonexistent = await request(app)
+      const nonexistent = await authRequest(app, authToken)
         .patch(`/api/v1/maintenance/${created._id}`)
         .send({ unit: new mongoose.Types.ObjectId().toString() });
 
@@ -294,22 +299,22 @@ describe('Maintenance API (/api/v1/maintenance)', () => {
 
     it('validates supplied update fields and returns 404 for a missing request', async () => {
       const created = await Maintenance.create(validPayload());
-      const emptyTitle = await request(app)
+      const emptyTitle = await authRequest(app, authToken)
         .patch(`/api/v1/maintenance/${created._id}`)
         .send({ title: ' ' });
-      const invalidPriority = await request(app)
+      const invalidPriority = await authRequest(app, authToken)
         .patch(`/api/v1/maintenance/${created._id}`)
         .send({ priority: 'critical' });
-      const invalidStatus = await request(app)
+      const invalidStatus = await authRequest(app, authToken)
         .patch(`/api/v1/maintenance/${created._id}`)
         .send({ status: 'cancelled' });
-      const invalidDesc = await request(app)
+      const invalidDesc = await authRequest(app, authToken)
         .patch(`/api/v1/maintenance/${created._id}`)
         .send({ description: 123 });
-      const invalidAssigned = await request(app)
+      const invalidAssigned = await authRequest(app, authToken)
         .patch(`/api/v1/maintenance/${created._id}`)
         .send({ assignedTo: 123 });
-      const missing = await request(app)
+      const missing = await authRequest(app, authToken)
         .patch(`/api/v1/maintenance/${new mongoose.Types.ObjectId()}`)
         .send({ title: 'Missing' });
 
@@ -325,7 +330,7 @@ describe('Maintenance API (/api/v1/maintenance)', () => {
   describe('DELETE /api/v1/maintenance/:id', () => {
     it('deletes only the Maintenance request', async () => {
       const created = await Maintenance.create(validPayload());
-      const res = await request(app).delete(`/api/v1/maintenance/${created._id}`);
+      const res = await authRequest(app, authToken).delete(`/api/v1/maintenance/${created._id}`);
 
       expect(res.status).toBe(200);
       expect(res.body.message).toBe('Maintenance request deleted successfully');
@@ -335,7 +340,7 @@ describe('Maintenance API (/api/v1/maintenance)', () => {
     });
 
     it('returns 404 for a nonexistent Maintenance request', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .delete(`/api/v1/maintenance/${new mongoose.Types.ObjectId()}`);
 
       expect(res.status).toBe(404);

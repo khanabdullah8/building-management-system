@@ -6,9 +6,12 @@ const morgan = require('morgan');
 
 const { NODE_ENV, ALLOWED_ORIGINS } = require('./config/env');
 const { createRateLimiter } = require('./middlewares/rateLimit');
+const { protect } = require('./middlewares/auth');
 const notFoundHandler = require('./middlewares/notFound');
 const errorHandler = require('./middlewares/error');
 
+const authRoutes = require('./routes/authRoutes');
+const userRoutes = require('./routes/userRoutes');
 const buildingRoutes = require('./routes/buildingRoutes');
 const unitRoutes = require('./routes/unitRoutes');
 const residentRoutes = require('./routes/residentRoutes');
@@ -48,6 +51,11 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+app.use('/api/v1/auth', authRoutes);
+
+app.use('/api/v1', protect);
+
+app.use('/api/v1/users', userRoutes);
 app.use('/api/v1/buildings', buildingRoutes);
 app.use('/api/v1/units', unitRoutes);
 app.use('/api/v1/residents', residentRoutes);

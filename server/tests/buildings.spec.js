@@ -7,13 +7,19 @@ const request = require('supertest');
 const app = require('../src/app');
 const Building = require('../src/models/Building');
 const { startMemoryDb, stopMemoryDb } = require('./helpers/db');
+const { createTestAdmin, removeTestAdmin, getAuthToken, authRequest } = require('./helpers/auth');
 
 describe('Building API (/api/v1/buildings)', () => {
+  let authToken;
+
   beforeAll(async () => {
     await startMemoryDb();
+    const admin = await createTestAdmin();
+    authToken = `Bearer ${getAuthToken(admin)}`;
   });
 
   afterAll(async () => {
+    await removeTestAdmin();
     await stopMemoryDb();
   });
 
@@ -31,7 +37,7 @@ describe('Building API (/api/v1/buildings)', () => {
         status: 'active',
       };
 
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .post('/api/v1/buildings')
         .send(payload);
 
@@ -49,7 +55,7 @@ describe('Building API (/api/v1/buildings)', () => {
     });
 
     it('fails validation when required fields are missing', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .post('/api/v1/buildings')
         .send({ name: 'Building without code' });
 
@@ -59,7 +65,7 @@ describe('Building API (/api/v1/buildings)', () => {
     });
 
     it('fails validation when units is negative', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .post('/api/v1/buildings')
         .send({ code: 'BLD-X', name: 'Test', units: -5 });
 
@@ -76,7 +82,7 @@ describe('Building API (/api/v1/buildings)', () => {
         units: 72,
       });
 
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .post('/api/v1/buildings')
         .send({
           code: 'bld-a', // Lowercase test, should format to uppercase and collide
@@ -91,7 +97,7 @@ describe('Building API (/api/v1/buildings)', () => {
 
   describe('GET /api/v1/buildings', () => {
     it('returns an empty array when no buildings exist', async () => {
-      const res = await request(app).get('/api/v1/buildings');
+      const res = await authRequest(app, authToken).get('/api/v1/buildings');
 
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
@@ -104,7 +110,7 @@ describe('Building API (/api/v1/buildings)', () => {
         { code: 'BLD-B', name: 'Maple Residency', units: 64 },
       ]);
 
-      const res = await request(app).get('/api/v1/buildings');
+      const res = await authRequest(app, authToken).get('/api/v1/buildings');
 
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
@@ -117,7 +123,7 @@ describe('Building API (/api/v1/buildings)', () => {
         { code: 'BLD-B', name: 'Maple Residency', address: '88 Maple Street' },
       ]);
 
-      const res = await request(app).get('/api/v1/buildings?search=Greenwood');
+      const res = await authRequest(app, authToken).get('/api/v1/buildings?search=Greenwood');
 
       expect(res.status).toBe(200);
       expect(res.body.data.length).toBe(1);
@@ -133,7 +139,7 @@ describe('Building API (/api/v1/buildings)', () => {
         units: 48,
       });
 
-      const res = await request(app).get(`/api/v1/buildings/${created._id}`);
+      const res = await authRequest(app, authToken).get(`/api/v1/buildings/${created._id}`);
 
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
@@ -142,7 +148,7 @@ describe('Building API (/api/v1/buildings)', () => {
     });
 
     it('returns 404 for non-existent or invalid building ID', async () => {
-      const res = await request(app).get('/api/v1/buildings/507f1f77bcf86cd799439011');
+      const res = await authRequest(app, authToken).get('/api/v1/buildings/507f1f77bcf86cd799439011');
 
       expect(res.status).toBe(404);
       expect(res.body.success).toBe(false);
@@ -159,7 +165,7 @@ describe('Building API (/api/v1/buildings)', () => {
         status: 'inactive',
       });
 
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .patch(`/api/v1/buildings/${created._id}`)
         .send({ status: 'active', units: 55 });
 
@@ -170,7 +176,7 @@ describe('Building API (/api/v1/buildings)', () => {
     });
 
     it('returns 404 when updating non-existent building', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .patch('/api/v1/buildings/507f1f77bcf86cd799439011')
         .send({ name: 'Non Existent' });
 
@@ -186,7 +192,7 @@ describe('Building API (/api/v1/buildings)', () => {
         name: 'ToDelete',
       });
 
-      const res = await request(app).delete(`/api/v1/buildings/${created._id}`);
+      const res = await authRequest(app, authToken).delete(`/api/v1/buildings/${created._id}`);
 
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
@@ -198,7 +204,7 @@ describe('Building API (/api/v1/buildings)', () => {
 
     it('returns 404 when deleting a valid ObjectId that does not exist', async () => {
       const validNonExistentId = new mongoose.Types.ObjectId().toString();
-      const res = await request(app).delete(`/api/v1/buildings/${validNonExistentId}`);
+      const res = await authRequest(app, authToken).delete(`/api/v1/buildings/${validNonExistentId}`);
 
       expect(res.status).toBe(404);
       expect(res.body.success).toBe(false);
@@ -206,7 +212,7 @@ describe('Building API (/api/v1/buildings)', () => {
     });
 
     it('returns 404 when deleting an invalid building ID format', async () => {
-      const res = await request(app).delete('/api/v1/buildings/invalid-id-format');
+      const res = await authRequest(app, authToken).delete('/api/v1/buildings/invalid-id-format');
 
       expect(res.status).toBe(404);
       expect(res.body.success).toBe(false);

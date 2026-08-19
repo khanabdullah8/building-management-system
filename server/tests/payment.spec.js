@@ -10,8 +10,10 @@ const Unit = require('../src/models/Unit');
 const Bill = require('../src/models/Bill');
 const Payment = require('../src/models/Payment');
 const { startMemoryDb, stopMemoryDb } = require('./helpers/db');
+const { createTestAdmin, removeTestAdmin, getAuthToken, authRequest } = require('./helpers/auth');
 
 describe('Payment API (/api/v1/payments)', () => {
+  let authToken;
   let sampleBuilding;
   let sampleUnit;
   let pendingBill;
@@ -41,9 +43,12 @@ describe('Payment API (/api/v1/payments)', () => {
 
   beforeAll(async () => {
     await startMemoryDb();
+    const admin = await createTestAdmin();
+    authToken = `Bearer ${getAuthToken(admin)}`;
   });
 
   afterAll(async () => {
+    await removeTestAdmin();
     await stopMemoryDb();
   });
 
@@ -82,7 +87,7 @@ describe('Payment API (/api/v1/payments)', () => {
 
   describe('POST /api/v1/payments', () => {
     it('creates a payment with Bill populated (nested Unit → Building)', async () => {
-      const res = await request(app).post('/api/v1/payments').send(validPayload());
+      const res = await authRequest(app, authToken).post('/api/v1/payments').send(validPayload());
 
       expect(res.status).toBe(201);
       expect(res.body.success).toBe(true);
@@ -103,18 +108,18 @@ describe('Payment API (/api/v1/payments)', () => {
     });
 
     it('auto-generates paymentNo when omitted', async () => {
-      const res = await request(app).post('/api/v1/payments').send(validPayload());
+      const res = await authRequest(app, authToken).post('/api/v1/payments').send(validPayload());
 
       expect(res.status).toBe(201);
       expect(res.body.data.paymentNo).toMatch(/^PAY-/);
     });
 
     it('rejects duplicate paymentNo', async () => {
-      await request(app)
+      await authRequest(app, authToken)
         .post('/api/v1/payments')
         .send({ ...validPayload(), paymentNo: 'PAY-DUP-001' });
 
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .post('/api/v1/payments')
         .send({ ...minimalPayload(), paymentNo: 'PAY-DUP-001' });
 
@@ -123,14 +128,14 @@ describe('Payment API (/api/v1/payments)', () => {
     });
 
     it('defaults status to completed when omitted', async () => {
-      const res = await request(app).post('/api/v1/payments').send(validPayload());
+      const res = await authRequest(app, authToken).post('/api/v1/payments').send(validPayload());
 
       expect(res.status).toBe(201);
       expect(res.body.data.status).toBe('completed');
     });
 
     it('defaults paidAt to current date', async () => {
-      const res = await request(app).post('/api/v1/payments').send(validPayload());
+      const res = await authRequest(app, authToken).post('/api/v1/payments').send(validPayload());
 
       expect(res.status).toBe(201);
       expect(res.body.data.paidAt).toBeTruthy();
@@ -138,7 +143,7 @@ describe('Payment API (/api/v1/payments)', () => {
     });
 
     it('recalculates Bill status to paid when full amount paid', async () => {
-      await request(app).post('/api/v1/payments').send({
+      await authRequest(app, authToken).post('/api/v1/payments').send({
         bill: pendingBill._id.toString(),
         amount: 5000,
         method: 'upi',
@@ -150,7 +155,7 @@ describe('Payment API (/api/v1/payments)', () => {
     });
 
     it('handles partial payment (Bill stays pending)', async () => {
-      await request(app).post('/api/v1/payments').send({
+      await authRequest(app, authToken).post('/api/v1/payments').send({
         bill: pendingBill._id.toString(),
         amount: 3000,
         method: 'cash',
@@ -162,7 +167,7 @@ describe('Payment API (/api/v1/payments)', () => {
     });
 
     it('handles multiple payments on same bill', async () => {
-      await request(app).post('/api/v1/payments').send({
+      await authRequest(app, authToken).post('/api/v1/payments').send({
         bill: pendingBill._id.toString(),
         amount: 3000,
         method: 'cash',
@@ -171,7 +176,7 @@ describe('Payment API (/api/v1/payments)', () => {
       let updatedBill = await Bill.findById(pendingBill._id);
       expect(updatedBill.status).toBe('pending');
 
-      await request(app).post('/api/v1/payments').send({
+      await authRequest(app, authToken).post('/api/v1/payments').send({
         bill: pendingBill._id.toString(),
         amount: 2000,
         method: 'card',
@@ -182,7 +187,7 @@ describe('Payment API (/api/v1/payments)', () => {
     });
 
     it('recalculates overdue Bill to paid', async () => {
-      await request(app).post('/api/v1/payments').send({
+      await authRequest(app, authToken).post('/api/v1/payments').send({
         bill: overdueBill._id.toString(),
         amount: 4000,
         method: 'bank_transfer',
@@ -193,7 +198,7 @@ describe('Payment API (/api/v1/payments)', () => {
     });
 
     it('rejects missing bill', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .post('/api/v1/payments')
         .send({ amount: 100, method: 'cash' });
 
@@ -202,7 +207,7 @@ describe('Payment API (/api/v1/payments)', () => {
     });
 
     it('rejects invalid bill ID format', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .post('/api/v1/payments')
         .send({ ...validPayload(), bill: 'invalid-id' });
 
@@ -211,7 +216,7 @@ describe('Payment API (/api/v1/payments)', () => {
     });
 
     it('rejects nonexistent bill reference', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .post('/api/v1/payments')
         .send({ ...validPayload(), bill: new mongoose.Types.ObjectId().toString() });
 
@@ -220,7 +225,7 @@ describe('Payment API (/api/v1/payments)', () => {
     });
 
     it('rejects missing amount', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .post('/api/v1/payments')
         .send({ bill: pendingBill._id.toString(), method: 'cash' });
 
@@ -229,7 +234,7 @@ describe('Payment API (/api/v1/payments)', () => {
     });
 
     it('rejects amount of 0', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .post('/api/v1/payments')
         .send({ ...validPayload(), amount: 0 });
 
@@ -238,7 +243,7 @@ describe('Payment API (/api/v1/payments)', () => {
     });
 
     it('rejects negative amount', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .post('/api/v1/payments')
         .send({ ...validPayload(), amount: -100 });
 
@@ -247,7 +252,7 @@ describe('Payment API (/api/v1/payments)', () => {
     });
 
     it('rejects missing method', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .post('/api/v1/payments')
         .send({ bill: pendingBill._id.toString(), amount: 100 });
 
@@ -256,7 +261,7 @@ describe('Payment API (/api/v1/payments)', () => {
     });
 
     it('rejects invalid method', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .post('/api/v1/payments')
         .send({ ...validPayload(), method: 'bitcoin' });
 
@@ -265,7 +270,7 @@ describe('Payment API (/api/v1/payments)', () => {
     });
 
     it('rejects invalid status', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .post('/api/v1/payments')
         .send({ ...validPayload(), status: 'invalid' });
 
@@ -274,7 +279,7 @@ describe('Payment API (/api/v1/payments)', () => {
     });
 
     it('accepts explicit pending status', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .post('/api/v1/payments')
         .send({ ...validPayload(), status: 'pending' });
 
@@ -283,7 +288,7 @@ describe('Payment API (/api/v1/payments)', () => {
     });
 
     it('accepts explicit failed status', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .post('/api/v1/payments')
         .send({ ...validPayload(), status: 'failed' });
 
@@ -296,7 +301,7 @@ describe('Payment API (/api/v1/payments)', () => {
 
       for (const method of methods) {
         const bill = await Bill.create(billPayload({ period: `Test ${method}` }));
-        const res = await request(app)
+        const res = await authRequest(app, authToken)
           .post('/api/v1/payments')
           .send({ bill: bill._id.toString(), amount: 100, method });
 
@@ -306,7 +311,7 @@ describe('Payment API (/api/v1/payments)', () => {
     });
 
     it('accepts reference and notes', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .post('/api/v1/payments')
         .send({ ...validPayload(), reference: 'TXN-12345', notes: 'Paid via app' });
 
@@ -316,7 +321,7 @@ describe('Payment API (/api/v1/payments)', () => {
     });
 
     it('rejects non-string reference', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .post('/api/v1/payments')
         .send({ ...validPayload(), reference: 12345 });
 
@@ -325,7 +330,7 @@ describe('Payment API (/api/v1/payments)', () => {
     });
 
     it('defaults reference and notes to empty strings', async () => {
-      const res = await request(app).post('/api/v1/payments').send(validPayload());
+      const res = await authRequest(app, authToken).post('/api/v1/payments').send(validPayload());
 
       expect(res.status).toBe(201);
       expect(res.body.data.reference).toBe('');
@@ -353,7 +358,7 @@ describe('Payment API (/api/v1/payments)', () => {
     });
 
     it('returns all payments with population', async () => {
-      const res = await request(app).get('/api/v1/payments');
+      const res = await authRequest(app, authToken).get('/api/v1/payments');
 
       expect(res.status).toBe(200);
       expect(res.body.data.length).toBe(2);
@@ -364,19 +369,19 @@ describe('Payment API (/api/v1/payments)', () => {
       const payments = await Payment.find().limit(1);
       const searchTerm = payments[0].paymentNo;
 
-      const res = await request(app).get(`/api/v1/payments?search=${searchTerm}`);
+      const res = await authRequest(app, authToken).get(`/api/v1/payments?search=${searchTerm}`);
       expect(res.status).toBe(200);
       expect(res.body.data.length).toBe(1);
     });
 
     it('searches across reference', async () => {
-      const res = await request(app).get('/api/v1/payments?search=TXN-001');
+      const res = await authRequest(app, authToken).get('/api/v1/payments?search=TXN-001');
       expect(res.status).toBe(200);
       expect(res.body.data.length).toBe(1);
     });
 
     it('filters by bill ID', async () => {
-      const res = await request(app).get(`/api/v1/payments?bill=${pendingBill._id}`);
+      const res = await authRequest(app, authToken).get(`/api/v1/payments?bill=${pendingBill._id}`);
       expect(res.status).toBe(200);
       expect(res.body.data.length).toBe(1);
       expect(res.body.data[0].bill.id).toBe(pendingBill._id.toString());
@@ -384,57 +389,57 @@ describe('Payment API (/api/v1/payments)', () => {
 
     it('filters by status', async () => {
       await Payment.create({ bill: pendingBill._id.toString(), amount: 100, method: 'card', status: 'pending' });
-      const res = await request(app).get('/api/v1/payments?status=pending');
+      const res = await authRequest(app, authToken).get('/api/v1/payments?status=pending');
       expect(res.status).toBe(200);
       expect(res.body.data.length).toBe(1);
       expect(res.body.data[0].status).toBe('pending');
     });
 
     it('filters by method', async () => {
-      const res = await request(app).get('/api/v1/payments?method=cash');
+      const res = await authRequest(app, authToken).get('/api/v1/payments?method=cash');
       expect(res.status).toBe(200);
       expect(res.body.data.length).toBe(1);
       expect(res.body.data[0].method).toBe('cash');
     });
 
     it('filters by dateFrom', async () => {
-      const res = await request(app).get('/api/v1/payments?dateFrom=2026-01-12');
+      const res = await authRequest(app, authToken).get('/api/v1/payments?dateFrom=2026-01-12');
       expect(res.status).toBe(200);
       expect(res.body.data.length).toBe(1);
     });
 
     it('filters by dateTo', async () => {
-      const res = await request(app).get('/api/v1/payments?dateTo=2026-01-12');
+      const res = await authRequest(app, authToken).get('/api/v1/payments?dateTo=2026-01-12');
       expect(res.status).toBe(200);
       expect(res.body.data.length).toBe(1);
     });
 
     it('returns empty array for invalid status', async () => {
-      const res = await request(app).get('/api/v1/payments?status=invalid');
+      const res = await authRequest(app, authToken).get('/api/v1/payments?status=invalid');
       expect(res.status).toBe(200);
       expect(res.body.data).toEqual([]);
     });
 
     it('returns empty array for invalid method', async () => {
-      const res = await request(app).get('/api/v1/payments?method=bitcoin');
+      const res = await authRequest(app, authToken).get('/api/v1/payments?method=bitcoin');
       expect(res.status).toBe(200);
       expect(res.body.data).toEqual([]);
     });
 
     it('returns empty array for invalid bill', async () => {
-      const res = await request(app).get('/api/v1/payments?bill=invalid');
+      const res = await authRequest(app, authToken).get('/api/v1/payments?bill=invalid');
       expect(res.status).toBe(200);
       expect(res.body.data).toEqual([]);
     });
 
     it('returns empty array for invalid building', async () => {
-      const res = await request(app).get('/api/v1/payments?building=invalid');
+      const res = await authRequest(app, authToken).get('/api/v1/payments?building=invalid');
       expect(res.status).toBe(200);
       expect(res.body.data).toEqual([]);
     });
 
     it('filters by building', async () => {
-      const res = await request(app).get(`/api/v1/payments?building=${sampleBuilding._id}`);
+      const res = await authRequest(app, authToken).get(`/api/v1/payments?building=${sampleBuilding._id}`);
       expect(res.status).toBe(200);
       expect(res.body.data.length).toBe(2);
     });
@@ -448,20 +453,20 @@ describe('Payment API (/api/v1/payments)', () => {
         method: 'upi',
       });
 
-      const res = await request(app).get(`/api/v1/payments/${created._id}`);
+      const res = await authRequest(app, authToken).get(`/api/v1/payments/${created._id}`);
       expect(res.status).toBe(200);
       expect(res.body.data.paymentNo).toBe(created.paymentNo);
       expect(res.body.data.bill.unit.unitNumber).toBe('101');
     });
 
     it('returns 404 for invalid ID format', async () => {
-      const res = await request(app).get('/api/v1/payments/invalid');
+      const res = await authRequest(app, authToken).get('/api/v1/payments/invalid');
       expect(res.status).toBe(404);
       expect(res.body.message).toBe('Payment not found');
     });
 
     it('returns 404 for nonexistent ID', async () => {
-      const res = await request(app).get(`/api/v1/payments/${new mongoose.Types.ObjectId()}`);
+      const res = await authRequest(app, authToken).get(`/api/v1/payments/${new mongoose.Types.ObjectId()}`);
       expect(res.status).toBe(404);
       expect(res.body.message).toBe('Payment not found');
     });
@@ -475,7 +480,7 @@ describe('Payment API (/api/v1/payments)', () => {
         method: 'upi',
       });
 
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .patch(`/api/v1/payments/${created._id}`)
         .send({ amount: 6000 });
 
@@ -490,7 +495,7 @@ describe('Payment API (/api/v1/payments)', () => {
         method: 'upi',
       });
 
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .patch(`/api/v1/payments/${created._id}`)
         .send({ method: 'card' });
 
@@ -506,7 +511,7 @@ describe('Payment API (/api/v1/payments)', () => {
         status: 'completed',
       });
 
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .patch(`/api/v1/payments/${created._id}`)
         .send({ status: 'failed' });
 
@@ -525,7 +530,7 @@ describe('Payment API (/api/v1/payments)', () => {
         method: 'upi',
       });
 
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .patch(`/api/v1/payments/${created._id}`)
         .send({ reference: 'NEW-REF' });
 
@@ -540,7 +545,7 @@ describe('Payment API (/api/v1/payments)', () => {
         method: 'upi',
       });
 
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .patch(`/api/v1/payments/${created._id}`)
         .send({ notes: 'Updated notes' });
 
@@ -555,7 +560,7 @@ describe('Payment API (/api/v1/payments)', () => {
         method: 'upi',
       });
 
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .patch(`/api/v1/payments/${created._id}`)
         .send({ paymentNo: 'PAY-HACKED' });
 
@@ -570,7 +575,7 @@ describe('Payment API (/api/v1/payments)', () => {
         method: 'upi',
       });
 
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .patch(`/api/v1/payments/${created._id}`)
         .send({ bill: overdueBill._id.toString() });
 
@@ -579,7 +584,7 @@ describe('Payment API (/api/v1/payments)', () => {
     });
 
     it('recalculates bill to pending when completed→failed', async () => {
-      const createRes = await request(app)
+      const createRes = await authRequest(app, authToken)
         .post('/api/v1/payments')
         .send({ bill: pendingBill._id.toString(), amount: 5000, method: 'upi' });
       const created = createRes.body.data;
@@ -587,7 +592,7 @@ describe('Payment API (/api/v1/payments)', () => {
       const billBefore = await Bill.findById(pendingBill._id);
       expect(billBefore.status).toBe('paid');
 
-      await request(app)
+      await authRequest(app, authToken)
         .patch(`/api/v1/payments/${created.id}`)
         .send({ status: 'failed' });
 
@@ -597,7 +602,7 @@ describe('Payment API (/api/v1/payments)', () => {
     });
 
     it('recalculates bill to paid when failed→completed', async () => {
-      const createRes = await request(app)
+      const createRes = await authRequest(app, authToken)
         .post('/api/v1/payments')
         .send({ bill: pendingBill._id.toString(), amount: 5000, method: 'upi', status: 'failed' });
       const created = createRes.body.data;
@@ -605,7 +610,7 @@ describe('Payment API (/api/v1/payments)', () => {
       const billBefore = await Bill.findById(pendingBill._id);
       expect(billBefore.status).toBe('pending');
 
-      await request(app)
+      await authRequest(app, authToken)
         .patch(`/api/v1/payments/${created.id}`)
         .send({ status: 'completed' });
 
@@ -621,7 +626,7 @@ describe('Payment API (/api/v1/payments)', () => {
         status: 'completed',
       });
 
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .patch(`/api/v1/payments/${created._id}`)
         .send({ reference: 'updated' });
 
@@ -636,7 +641,7 @@ describe('Payment API (/api/v1/payments)', () => {
         method: 'upi',
       });
 
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .patch(`/api/v1/payments/${created._id}`)
         .send({ amount: 0 });
 
@@ -651,7 +656,7 @@ describe('Payment API (/api/v1/payments)', () => {
         method: 'upi',
       });
 
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .patch(`/api/v1/payments/${created._id}`)
         .send({ amount: -100 });
 
@@ -666,7 +671,7 @@ describe('Payment API (/api/v1/payments)', () => {
         method: 'upi',
       });
 
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .patch(`/api/v1/payments/${created._id}`)
         .send({ method: 'bitcoin' });
 
@@ -681,7 +686,7 @@ describe('Payment API (/api/v1/payments)', () => {
         method: 'upi',
       });
 
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .patch(`/api/v1/payments/${created._id}`)
         .send({ status: 'invalid' });
 
@@ -690,7 +695,7 @@ describe('Payment API (/api/v1/payments)', () => {
     });
 
     it('returns 404 for nonexistent payment', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .patch(`/api/v1/payments/${new mongoose.Types.ObjectId()}`)
         .send({ amount: 100 });
 
@@ -701,7 +706,7 @@ describe('Payment API (/api/v1/payments)', () => {
 
   describe('DELETE /api/v1/payments/:id', () => {
     it('hard deletes payment and recalculates bill status', async () => {
-      const createRes = await request(app)
+      const createRes = await authRequest(app, authToken)
         .post('/api/v1/payments')
         .send({ bill: pendingBill._id.toString(), amount: 5000, method: 'upi' });
       const created = createRes.body.data;
@@ -709,7 +714,7 @@ describe('Payment API (/api/v1/payments)', () => {
       const billBefore = await Bill.findById(pendingBill._id);
       expect(billBefore.status).toBe('paid');
 
-      const res = await request(app).delete(`/api/v1/payments/${created.id}`);
+      const res = await authRequest(app, authToken).delete(`/api/v1/payments/${created.id}`);
 
       expect(res.status).toBe(200);
       expect(res.body.message).toBe('Payment deleted successfully');
@@ -721,12 +726,12 @@ describe('Payment API (/api/v1/payments)', () => {
     });
 
     it('recalculates bill with multiple payments', async () => {
-      const createRes1 = await request(app)
+      const createRes1 = await authRequest(app, authToken)
         .post('/api/v1/payments')
         .send({ bill: pendingBill._id.toString(), amount: 3000, method: 'cash' });
       const p1 = createRes1.body.data;
 
-      const createRes2 = await request(app)
+      const createRes2 = await authRequest(app, authToken)
         .post('/api/v1/payments')
         .send({ bill: pendingBill._id.toString(), amount: 2000, method: 'card' });
       const p2 = createRes2.body.data;
@@ -734,14 +739,14 @@ describe('Payment API (/api/v1/payments)', () => {
       let bill = await Bill.findById(pendingBill._id);
       expect(bill.status).toBe('paid');
 
-      await request(app).delete(`/api/v1/payments/${p2.id}`);
+      await authRequest(app, authToken).delete(`/api/v1/payments/${p2.id}`);
 
       bill = await Bill.findById(pendingBill._id);
       expect(bill.status).toBe('pending');
     });
 
     it('returns 404 for nonexistent payment', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .delete(`/api/v1/payments/${new mongoose.Types.ObjectId()}`);
 
       expect(res.status).toBe(404);

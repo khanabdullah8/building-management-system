@@ -9,8 +9,10 @@ const Building = require('../src/models/Building');
 const Unit = require('../src/models/Unit');
 const Parking = require('../src/models/Parking');
 const { startMemoryDb, stopMemoryDb } = require('./helpers/db');
+const { createTestAdmin, removeTestAdmin, getAuthToken, authRequest } = require('./helpers/auth');
 
 describe('Parking API (/api/v1/parking)', () => {
+  let authToken;
   let sampleBuilding;
   let secondaryBuilding;
   let sampleUnit;
@@ -31,9 +33,12 @@ describe('Parking API (/api/v1/parking)', () => {
 
   beforeAll(async () => {
     await startMemoryDb();
+    const admin = await createTestAdmin();
+    authToken = `Bearer ${getAuthToken(admin)}`;
   });
 
   afterAll(async () => {
+    await removeTestAdmin();
     await stopMemoryDb();
   });
 
@@ -62,7 +67,7 @@ describe('Parking API (/api/v1/parking)', () => {
 
   describe('POST /api/v1/parking', () => {
     it('creates a parking slot with Building and Unit, populates both', async () => {
-      const res = await request(app).post('/api/v1/parking').send(validPayload());
+      const res = await authRequest(app, authToken).post('/api/v1/parking').send(validPayload());
 
       expect(res.status).toBe(201);
       expect(res.body.success).toBe(true);
@@ -83,7 +88,7 @@ describe('Parking API (/api/v1/parking)', () => {
     });
 
     it('defaults vehicleType to car and vehicleNumber to empty when omitted', async () => {
-      const res = await request(app).post('/api/v1/parking').send(minimalPayload());
+      const res = await authRequest(app, authToken).post('/api/v1/parking').send(minimalPayload());
 
       expect(res.status).toBe(201);
       expect(res.body.data.slotCode).toBe('P-01');
@@ -92,14 +97,14 @@ describe('Parking API (/api/v1/parking)', () => {
     });
 
     it('creates an unallocated slot when unit is omitted', async () => {
-      const res = await request(app).post('/api/v1/parking').send(minimalPayload());
+      const res = await authRequest(app, authToken).post('/api/v1/parking').send(minimalPayload());
 
       expect(res.status).toBe(201);
       expect(res.body.data.unit).toBeNull();
     });
 
     it('ignores vehicleNumber when unit is not provided', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .post('/api/v1/parking')
         .send({ ...minimalPayload(), vehicleNumber: 'MH-12-AB-1234' });
 
@@ -109,7 +114,7 @@ describe('Parking API (/api/v1/parking)', () => {
     });
 
     it('accepts explicit vehicleType bike', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .post('/api/v1/parking')
         .send({ ...minimalPayload(), slotCode: 'M-01', vehicleType: 'bike' });
 
@@ -118,7 +123,7 @@ describe('Parking API (/api/v1/parking)', () => {
     });
 
     it('rejects missing slotCode', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .post('/api/v1/parking')
         .send({ building: sampleBuilding._id.toString() });
 
@@ -127,7 +132,7 @@ describe('Parking API (/api/v1/parking)', () => {
     });
 
     it('rejects empty slotCode', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .post('/api/v1/parking')
         .send({ ...minimalPayload(), slotCode: '   ' });
 
@@ -136,7 +141,7 @@ describe('Parking API (/api/v1/parking)', () => {
     });
 
     it('rejects missing building', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .post('/api/v1/parking')
         .send({ slotCode: 'P-01' });
 
@@ -145,7 +150,7 @@ describe('Parking API (/api/v1/parking)', () => {
     });
 
     it('rejects invalid building ID format', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .post('/api/v1/parking')
         .send({ ...minimalPayload(), building: 'invalid-id' });
 
@@ -154,7 +159,7 @@ describe('Parking API (/api/v1/parking)', () => {
     });
 
     it('rejects nonexistent building reference', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .post('/api/v1/parking')
         .send({ ...minimalPayload(), building: new mongoose.Types.ObjectId().toString() });
 
@@ -163,16 +168,16 @@ describe('Parking API (/api/v1/parking)', () => {
     });
 
     it('rejects duplicate slotCode within same building', async () => {
-      await request(app).post('/api/v1/parking').send(minimalPayload());
-      const res = await request(app).post('/api/v1/parking').send(minimalPayload());
+      await authRequest(app, authToken).post('/api/v1/parking').send(minimalPayload());
+      const res = await authRequest(app, authToken).post('/api/v1/parking').send(minimalPayload());
 
       expect(res.status).toBe(409);
       expect(res.body.errors.slotCode).toBeTruthy();
     });
 
     it('allows same slotCode in different buildings', async () => {
-      const first = await request(app).post('/api/v1/parking').send(minimalPayload());
-      const second = await request(app)
+      const first = await authRequest(app, authToken).post('/api/v1/parking').send(minimalPayload());
+      const second = await authRequest(app, authToken)
         .post('/api/v1/parking')
         .send({ ...minimalPayload(), building: secondaryBuilding._id.toString() });
 
@@ -181,7 +186,7 @@ describe('Parking API (/api/v1/parking)', () => {
     });
 
     it('rejects invalid unit ID format', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .post('/api/v1/parking')
         .send({ ...validPayload(), unit: 'invalid-id' });
 
@@ -190,7 +195,7 @@ describe('Parking API (/api/v1/parking)', () => {
     });
 
     it('rejects nonexistent unit reference', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .post('/api/v1/parking')
         .send({ ...validPayload(), unit: new mongoose.Types.ObjectId().toString() });
 
@@ -199,7 +204,7 @@ describe('Parking API (/api/v1/parking)', () => {
     });
 
     it('rejects unit that belongs to a different building', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .post('/api/v1/parking')
         .send({ ...validPayload(), unit: secondaryUnit._id.toString() });
 
@@ -208,7 +213,7 @@ describe('Parking API (/api/v1/parking)', () => {
     });
 
     it('rejects invalid vehicleType', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .post('/api/v1/parking')
         .send({ ...minimalPayload(), vehicleType: 'truck' });
 
@@ -217,7 +222,7 @@ describe('Parking API (/api/v1/parking)', () => {
     });
 
     it('trims and uppercases slotCode', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .post('/api/v1/parking')
         .send({ ...minimalPayload(), slotCode: '  p-02  ' });
 
@@ -228,7 +233,7 @@ describe('Parking API (/api/v1/parking)', () => {
 
   describe('GET /api/v1/parking', () => {
     it('returns an empty list when no slots exist', async () => {
-      const res = await request(app).get('/api/v1/parking');
+      const res = await authRequest(app, authToken).get('/api/v1/parking');
 
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
@@ -237,7 +242,7 @@ describe('Parking API (/api/v1/parking)', () => {
 
     it('returns slots with populated Building and Unit data', async () => {
       await Parking.create(validPayload());
-      const res = await request(app).get('/api/v1/parking');
+      const res = await authRequest(app, authToken).get('/api/v1/parking');
 
       expect(res.status).toBe(200);
       expect(res.body.data).toHaveLength(1);
@@ -253,7 +258,7 @@ describe('Parking API (/api/v1/parking)', () => {
 
     it('returns null unit for unallocated slots', async () => {
       await Parking.create(minimalPayload());
-      const res = await request(app).get('/api/v1/parking');
+      const res = await authRequest(app, authToken).get('/api/v1/parking');
 
       expect(res.status).toBe(200);
       expect(res.body.data[0].unit).toBeNull();
@@ -270,7 +275,7 @@ describe('Parking API (/api/v1/parking)', () => {
         createdAt: new Date('2026-08-12T09:00:00Z'),
       });
 
-      const res = await request(app).get('/api/v1/parking');
+      const res = await authRequest(app, authToken).get('/api/v1/parking');
 
       expect(res.body.data).toHaveLength(2);
       expect(res.body.data[0].slotCode).toBe('P-02');
@@ -285,7 +290,7 @@ describe('Parking API (/api/v1/parking)', () => {
         vehicleType: 'bike',
       });
 
-      const res = await request(app).get('/api/v1/parking?search=P-01');
+      const res = await authRequest(app, authToken).get('/api/v1/parking?search=P-01');
 
       expect(res.body.data).toHaveLength(1);
       expect(res.body.data[0].slotCode).toBe('P-01');
@@ -299,7 +304,7 @@ describe('Parking API (/api/v1/parking)', () => {
         vehicleType: 'bike',
       });
 
-      const res = await request(app).get('/api/v1/parking?search=bike');
+      const res = await authRequest(app, authToken).get('/api/v1/parking?search=bike');
 
       expect(res.body.data).toHaveLength(1);
       expect(res.body.data[0].slotCode).toBe('M-05');
@@ -312,7 +317,7 @@ describe('Parking API (/api/v1/parking)', () => {
         slotCode: 'P-02',
       });
 
-      const res = await request(app).get('/api/v1/parking?search=A-1101');
+      const res = await authRequest(app, authToken).get('/api/v1/parking?search=A-1101');
 
       expect(res.body.data).toHaveLength(1);
       expect(res.body.data[0].slotCode).toBe('P-01');
@@ -332,11 +337,11 @@ describe('Parking API (/api/v1/parking)', () => {
         unit: secondaryUnit._id.toString(),
       });
 
-      const searchBike = await request(app).get('/api/v1/parking?search=bike');
+      const searchBike = await authRequest(app, authToken).get('/api/v1/parking?search=bike');
       expect(searchBike.body.data).toHaveLength(1);
       expect(searchBike.body.data[0].slotCode).toBe('M-05');
 
-      const searchUnit = await request(app).get('/api/v1/parking?search=B-0901');
+      const searchUnit = await authRequest(app, authToken).get('/api/v1/parking?search=B-0901');
       expect(searchUnit.body.data).toHaveLength(1);
       expect(searchUnit.body.data[0].slotCode).toBe('P-02');
     });
@@ -348,7 +353,7 @@ describe('Parking API (/api/v1/parking)', () => {
         slotCode: 'P.02',
       });
 
-      const literalDot = await request(app).get('/api/v1/parking?search=P.01');
+      const literalDot = await authRequest(app, authToken).get('/api/v1/parking?search=P.01');
 
       expect(literalDot.status).toBe(200);
       expect(literalDot.body.data).toHaveLength(0);
@@ -362,7 +367,7 @@ describe('Parking API (/api/v1/parking)', () => {
         building: secondaryBuilding._id.toString(),
       });
 
-      const res = await request(app).get(
+      const res = await authRequest(app, authToken).get(
         `/api/v1/parking?building=${sampleBuilding._id}`
       );
 
@@ -377,7 +382,7 @@ describe('Parking API (/api/v1/parking)', () => {
         slotCode: 'P-02',
       });
 
-      const res = await request(app).get(
+      const res = await authRequest(app, authToken).get(
         `/api/v1/parking?unit=${sampleUnit._id}`
       );
 
@@ -393,7 +398,7 @@ describe('Parking API (/api/v1/parking)', () => {
         building: secondaryBuilding._id.toString(),
       });
 
-      const res = await request(app).get(
+      const res = await authRequest(app, authToken).get(
         `/api/v1/parking?search=P-01&building=${sampleBuilding._id}`
       );
 
@@ -403,7 +408,7 @@ describe('Parking API (/api/v1/parking)', () => {
 
     it('returns empty array for invalid building ID in filter', async () => {
       await Parking.create(validPayload());
-      const res = await request(app).get('/api/v1/parking?building=invalid-id');
+      const res = await authRequest(app, authToken).get('/api/v1/parking?building=invalid-id');
 
       expect(res.status).toBe(200);
       expect(res.body.data).toEqual([]);
@@ -411,7 +416,7 @@ describe('Parking API (/api/v1/parking)', () => {
 
     it('returns empty array for invalid unit ID in filter', async () => {
       await Parking.create(validPayload());
-      const res = await request(app).get('/api/v1/parking?unit=invalid-id');
+      const res = await authRequest(app, authToken).get('/api/v1/parking?unit=invalid-id');
 
       expect(res.status).toBe(200);
       expect(res.body.data).toEqual([]);
@@ -421,7 +426,7 @@ describe('Parking API (/api/v1/parking)', () => {
   describe('GET /api/v1/parking/:id', () => {
     it('returns one populated parking slot', async () => {
       const created = await Parking.create(validPayload());
-      const res = await request(app).get(`/api/v1/parking/${created._id}`);
+      const res = await authRequest(app, authToken).get(`/api/v1/parking/${created._id}`);
 
       expect(res.status).toBe(200);
       expect(res.body.data.slotCode).toBe('P-01');
@@ -431,8 +436,8 @@ describe('Parking API (/api/v1/parking)', () => {
     });
 
     it('returns 404 for invalid and nonexistent IDs', async () => {
-      const invalid = await request(app).get('/api/v1/parking/invalid-id');
-      const nonexistent = await request(app)
+      const invalid = await authRequest(app, authToken).get('/api/v1/parking/invalid-id');
+      const nonexistent = await authRequest(app, authToken)
         .get(`/api/v1/parking/${new mongoose.Types.ObjectId()}`);
 
       expect(invalid.status).toBe(404);
@@ -445,7 +450,7 @@ describe('Parking API (/api/v1/parking)', () => {
   describe('PATCH /api/v1/parking/:id', () => {
     it('updates slotCode, vehicleType, and vehicleNumber', async () => {
       const created = await Parking.create(validPayload());
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .patch(`/api/v1/parking/${created._id}`)
         .send({ slotCode: 'P-10', vehicleType: 'bike', vehicleNumber: 'MH-12-XY-9999' });
 
@@ -464,7 +469,7 @@ describe('Parking API (/api/v1/parking)', () => {
       });
 
       const created = await Parking.create(validPayload());
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .patch(`/api/v1/parking/${created._id}`)
         .send({ unit: anotherUnit._id.toString() });
 
@@ -474,7 +479,7 @@ describe('Parking API (/api/v1/parking)', () => {
 
     it('unallocates by setting unit to null and clears vehicleNumber', async () => {
       const created = await Parking.create(validPayload());
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .patch(`/api/v1/parking/${created._id}`)
         .send({ unit: null });
 
@@ -485,7 +490,7 @@ describe('Parking API (/api/v1/parking)', () => {
 
     it('rejects empty slotCode on update', async () => {
       const created = await Parking.create(validPayload());
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .patch(`/api/v1/parking/${created._id}`)
         .send({ slotCode: '   ' });
 
@@ -495,7 +500,7 @@ describe('Parking API (/api/v1/parking)', () => {
 
     it('rejects invalid unit on update', async () => {
       const created = await Parking.create(validPayload());
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .patch(`/api/v1/parking/${created._id}`)
         .send({ unit: 'invalid-id' });
 
@@ -505,7 +510,7 @@ describe('Parking API (/api/v1/parking)', () => {
 
     it('rejects unit belonging to a different building on update', async () => {
       const created = await Parking.create(validPayload());
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .patch(`/api/v1/parking/${created._id}`)
         .send({ unit: secondaryUnit._id.toString() });
 
@@ -520,7 +525,7 @@ describe('Parking API (/api/v1/parking)', () => {
         slotCode: 'P-02',
       });
 
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .patch(`/api/v1/parking/${second._id}`)
         .send({ slotCode: 'P-01' });
 
@@ -530,7 +535,7 @@ describe('Parking API (/api/v1/parking)', () => {
 
     it('allows same slotCode when it belongs to the same slot on update', async () => {
       const created = await Parking.create(validPayload());
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .patch(`/api/v1/parking/${created._id}`)
         .send({ slotCode: 'P-01', vehicleNumber: 'MH-12-NEW-0000' });
 
@@ -540,7 +545,7 @@ describe('Parking API (/api/v1/parking)', () => {
     });
 
     it('returns 404 for nonexistent slot', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .patch(`/api/v1/parking/${new mongoose.Types.ObjectId()}`)
         .send({ slotCode: 'P-99' });
 
@@ -552,7 +557,7 @@ describe('Parking API (/api/v1/parking)', () => {
   describe('DELETE /api/v1/parking/:id', () => {
     it('deletes only the parking slot', async () => {
       const created = await Parking.create(validPayload());
-      const res = await request(app).delete(`/api/v1/parking/${created._id}`);
+      const res = await authRequest(app, authToken).delete(`/api/v1/parking/${created._id}`);
 
       expect(res.status).toBe(200);
       expect(res.body.message).toBe('Parking slot deleted successfully');
@@ -562,7 +567,7 @@ describe('Parking API (/api/v1/parking)', () => {
     });
 
     it('returns 404 for a nonexistent slot', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .delete(`/api/v1/parking/${new mongoose.Types.ObjectId()}`);
 
       expect(res.status).toBe(404);

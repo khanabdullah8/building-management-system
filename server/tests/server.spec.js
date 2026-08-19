@@ -11,13 +11,19 @@ const ApiError = require('../src/utils/ApiError');
 const errorHandler = require('../src/middlewares/error');
 const { createRateLimiter } = require('../src/middlewares/rateLimit');
 const { startMemoryDb, stopMemoryDb } = require('./helpers/db');
+const { createTestAdmin, removeTestAdmin, getAuthToken, authRequest } = require('./helpers/auth');
 
 describe('Phase 1 server', () => {
+  let authToken;
+
   beforeAll(async () => {
     await startMemoryDb();
+    const admin = await createTestAdmin();
+    authToken = `Bearer ${getAuthToken(admin)}`;
   });
 
   afterAll(async () => {
+    await removeTestAdmin();
     await stopMemoryDb();
   });
 
@@ -64,7 +70,7 @@ describe('Phase 1 server', () => {
 
   describe('Unknown routes', () => {
     it('returns a JSON 404 for unknown routes', async () => {
-      const res = await request(app).get('/api/v1/nonexistent');
+      const res = await request(app).get('/api/v1/nonexistent').set('Authorization', authToken);
 
       expect(res.status).toBe(404);
       expect(res.body.success).toBe(false);

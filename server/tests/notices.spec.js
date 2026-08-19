@@ -8,8 +8,10 @@ const app = require('../src/app');
 const Building = require('../src/models/Building');
 const Notice = require('../src/models/Notice');
 const { startMemoryDb, stopMemoryDb } = require('./helpers/db');
+const { createTestAdmin, removeTestAdmin, getAuthToken, authRequest } = require('./helpers/auth');
 
 describe('Notices API (/api/v1/notices)', () => {
+  let authToken;
   let sampleBuilding;
   let secondaryBuilding;
 
@@ -35,9 +37,12 @@ describe('Notices API (/api/v1/notices)', () => {
 
   beforeAll(async () => {
     await startMemoryDb();
+    const admin = await createTestAdmin();
+    authToken = `Bearer ${getAuthToken(admin)}`;
   });
 
   afterAll(async () => {
+    await removeTestAdmin();
     await stopMemoryDb();
   });
 
@@ -57,7 +62,7 @@ describe('Notices API (/api/v1/notices)', () => {
 
   describe('POST /api/v1/notices', () => {
     it('creates a Notice with building ref and populates building data', async () => {
-      const res = await request(app).post('/api/v1/notices').send(validBuildingPayload());
+      const res = await authRequest(app, authToken).post('/api/v1/notices').send(validBuildingPayload());
 
       expect(res.status).toBe(201);
       expect(res.body.success).toBe(true);
@@ -75,7 +80,7 @@ describe('Notices API (/api/v1/notices)', () => {
     });
 
     it('creates a Notice with building null (All residents)', async () => {
-      const res = await request(app).post('/api/v1/notices').send(validAllResidentsPayload());
+      const res = await authRequest(app, authToken).post('/api/v1/notices').send(validAllResidentsPayload());
 
       expect(res.status).toBe(201);
       expect(res.body.data).toMatchObject({
@@ -90,7 +95,7 @@ describe('Notices API (/api/v1/notices)', () => {
     });
 
     it('creates an event Notice', async () => {
-      const res = await request(app).post('/api/v1/notices').send(validEventPayload());
+      const res = await authRequest(app, authToken).post('/api/v1/notices').send(validEventPayload());
 
       expect(res.status).toBe(201);
       expect(res.body.data).toMatchObject({
@@ -101,10 +106,10 @@ describe('Notices API (/api/v1/notices)', () => {
     });
 
     it('rejects missing and empty title', async () => {
-      const missing = await request(app)
+      const missing = await authRequest(app, authToken)
         .post('/api/v1/notices')
         .send({ ...validAllResidentsPayload(), title: undefined });
-      const empty = await request(app)
+      const empty = await authRequest(app, authToken)
         .post('/api/v1/notices')
         .send({ ...validAllResidentsPayload(), title: '   ' });
 
@@ -115,7 +120,7 @@ describe('Notices API (/api/v1/notices)', () => {
     });
 
     it('rejects invalid category', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .post('/api/v1/notices')
         .send({ ...validAllResidentsPayload(), category: 'flyer' });
 
@@ -124,7 +129,7 @@ describe('Notices API (/api/v1/notices)', () => {
     });
 
     it('rejects invalid building ID format', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .post('/api/v1/notices')
         .send({ ...validAllResidentsPayload(), building: 'invalid-id' });
 
@@ -133,7 +138,7 @@ describe('Notices API (/api/v1/notices)', () => {
     });
 
     it('rejects nonexistent building', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .post('/api/v1/notices')
         .send({ ...validAllResidentsPayload(), building: new mongoose.Types.ObjectId().toString() });
 
@@ -142,7 +147,7 @@ describe('Notices API (/api/v1/notices)', () => {
     });
 
     it('accepts omitted description (defaults to empty string)', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .post('/api/v1/notices')
         .send({ title: 'No description notice', category: 'notice' });
 
@@ -151,7 +156,7 @@ describe('Notices API (/api/v1/notices)', () => {
     });
 
     it('rejects non-string description', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .post('/api/v1/notices')
         .send({ ...validAllResidentsPayload(), description: 12345 });
 
@@ -160,14 +165,14 @@ describe('Notices API (/api/v1/notices)', () => {
     });
 
     it('accepts omitted expiresAt (defaults to null)', async () => {
-      const res = await request(app).post('/api/v1/notices').send(validAllResidentsPayload());
+      const res = await authRequest(app, authToken).post('/api/v1/notices').send(validAllResidentsPayload());
 
       expect(res.status).toBe(201);
       expect(res.body.data.expiresAt).toBeNull();
     });
 
     it('rejects invalid expiresAt', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .post('/api/v1/notices')
         .send({ ...validAllResidentsPayload(), expiresAt: 'not-a-date' });
 
@@ -177,7 +182,7 @@ describe('Notices API (/api/v1/notices)', () => {
 
     it('sets publishedAt to server time', async () => {
       const before = Date.now();
-      const res = await request(app).post('/api/v1/notices').send(validAllResidentsPayload());
+      const res = await authRequest(app, authToken).post('/api/v1/notices').send(validAllResidentsPayload());
       const after = Date.now();
 
       expect(res.status).toBe(201);
@@ -189,7 +194,7 @@ describe('Notices API (/api/v1/notices)', () => {
 
   describe('GET /api/v1/notices', () => {
     it('returns an empty list when no notices exist', async () => {
-      const res = await request(app).get('/api/v1/notices');
+      const res = await authRequest(app, authToken).get('/api/v1/notices');
 
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
@@ -198,7 +203,7 @@ describe('Notices API (/api/v1/notices)', () => {
 
     it('returns notices with populated building data', async () => {
       await Notice.create(validBuildingPayload());
-      const res = await request(app).get('/api/v1/notices');
+      const res = await authRequest(app, authToken).get('/api/v1/notices');
 
       expect(res.status).toBe(200);
       expect(res.body.data).toHaveLength(1);
@@ -210,7 +215,7 @@ describe('Notices API (/api/v1/notices)', () => {
 
     it('returns notices with building null (All residents)', async () => {
       await Notice.create(validAllResidentsPayload());
-      const res = await request(app).get('/api/v1/notices');
+      const res = await authRequest(app, authToken).get('/api/v1/notices');
 
       expect(res.status).toBe(200);
       expect(res.body.data).toHaveLength(1);
@@ -223,7 +228,7 @@ describe('Notices API (/api/v1/notices)', () => {
         category: 'event',
       }]);
 
-      const res = await request(app).get('/api/v1/notices?search=maintenance');
+      const res = await authRequest(app, authToken).get('/api/v1/notices?search=maintenance');
 
       expect(res.body.data).toHaveLength(1);
       expect(res.body.data[0].title).toBe('Quarterly maintenance due');
@@ -236,7 +241,7 @@ describe('Notices API (/api/v1/notices)', () => {
         description: 'Tank on the terrace will be cleaned.',
       }]);
 
-      const res = await request(app).get('/api/v1/notices?search=terrace');
+      const res = await authRequest(app, authToken).get('/api/v1/notices?search=terrace');
 
       expect(res.body.data).toHaveLength(1);
       expect(res.body.data[0].title).toBe('Water tank cleaning');
@@ -248,9 +253,9 @@ describe('Notices API (/api/v1/notices)', () => {
         category: 'announcement',
       }]);
 
-      const specialTitle = await request(app).get('/api/v1/notices?search=safety%20(drill)');
-      const danglingBracket = await request(app).get('/api/v1/notices?search=%5B');
-      const literalDot = await request(app).get('/api/v1/notices?search=safety.dril');
+      const specialTitle = await authRequest(app, authToken).get('/api/v1/notices?search=safety%20(drill)');
+      const danglingBracket = await authRequest(app, authToken).get('/api/v1/notices?search=%5B');
+      const literalDot = await authRequest(app, authToken).get('/api/v1/notices?search=safety.dril');
 
       expect(specialTitle.status).toBe(200);
       expect(specialTitle.body.data).toHaveLength(1);
@@ -269,7 +274,7 @@ describe('Notices API (/api/v1/notices)', () => {
         { ...validAllResidentsPayload(), title: 'Second notice' },
       ]);
 
-      const res = await request(app).get(`/api/v1/notices?building=${sampleBuilding._id}`);
+      const res = await authRequest(app, authToken).get(`/api/v1/notices?building=${sampleBuilding._id}`);
 
       expect(res.body.data).toHaveLength(1);
       expect(res.body.data[0].building.code).toBe('BLD-A');
@@ -281,7 +286,7 @@ describe('Notices API (/api/v1/notices)', () => {
         { ...validAllResidentsPayload(), title: 'Power shutdown extension' },
       ]);
 
-      const res = await request(app).get(
+      const res = await authRequest(app, authToken).get(
         `/api/v1/notices?search=power&building=${sampleBuilding._id}`
       );
 
@@ -291,7 +296,7 @@ describe('Notices API (/api/v1/notices)', () => {
 
     it('returns empty array for invalid building ID in filter', async () => {
       await Notice.create(validAllResidentsPayload());
-      const res = await request(app).get('/api/v1/notices?building=invalid-id');
+      const res = await authRequest(app, authToken).get('/api/v1/notices?building=invalid-id');
 
       expect(res.status).toBe(200);
       expect(res.body.data).toEqual([]);
@@ -309,7 +314,7 @@ describe('Notices API (/api/v1/notices)', () => {
         publishedAt: new Date('2026-08-10'),
       });
 
-      const res = await request(app).get('/api/v1/notices');
+      const res = await authRequest(app, authToken).get('/api/v1/notices');
 
       expect(res.body.data).toHaveLength(2);
       expect(res.body.data[0].title).toBe('Second notice');
@@ -320,7 +325,7 @@ describe('Notices API (/api/v1/notices)', () => {
   describe('GET /api/v1/notices/:id', () => {
     it('returns one populated Notice', async () => {
       const created = await Notice.create(validBuildingPayload());
-      const res = await request(app).get(`/api/v1/notices/${created._id}`);
+      const res = await authRequest(app, authToken).get(`/api/v1/notices/${created._id}`);
 
       expect(res.status).toBe(200);
       expect(res.body.data.title).toBe('Power shutdown on Sunday');
@@ -329,7 +334,7 @@ describe('Notices API (/api/v1/notices)', () => {
 
     it('returns one Notice with building null', async () => {
       const created = await Notice.create(validAllResidentsPayload());
-      const res = await request(app).get(`/api/v1/notices/${created._id}`);
+      const res = await authRequest(app, authToken).get(`/api/v1/notices/${created._id}`);
 
       expect(res.status).toBe(200);
       expect(res.body.data.title).toBe('Quarterly maintenance due');
@@ -337,8 +342,8 @@ describe('Notices API (/api/v1/notices)', () => {
     });
 
     it('returns 404 for invalid and nonexistent Notice IDs', async () => {
-      const invalid = await request(app).get('/api/v1/notices/invalid-id');
-      const nonexistent = await request(app)
+      const invalid = await authRequest(app, authToken).get('/api/v1/notices/invalid-id');
+      const nonexistent = await authRequest(app, authToken)
         .get(`/api/v1/notices/${new mongoose.Types.ObjectId()}`);
 
       expect(invalid.status).toBe(404);
@@ -351,7 +356,7 @@ describe('Notices API (/api/v1/notices)', () => {
   describe('PATCH /api/v1/notices/:id', () => {
     it('updates title, category, description, and expiresAt', async () => {
       const created = await Notice.create(validAllResidentsPayload());
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .patch(`/api/v1/notices/${created._id}`)
         .send({
           title: ' Updated maintenance notice ',
@@ -371,7 +376,7 @@ describe('Notices API (/api/v1/notices)', () => {
 
     it('reassigns building', async () => {
       const created = await Notice.create(validBuildingPayload());
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .patch(`/api/v1/notices/${created._id}`)
         .send({ building: secondaryBuilding._id.toString() });
 
@@ -381,7 +386,7 @@ describe('Notices API (/api/v1/notices)', () => {
 
     it('sets building to null (All residents)', async () => {
       const created = await Notice.create(validBuildingPayload());
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .patch(`/api/v1/notices/${created._id}`)
         .send({ building: null });
 
@@ -391,7 +396,7 @@ describe('Notices API (/api/v1/notices)', () => {
 
     it('clears expiresAt by setting to null', async () => {
       const created = await Notice.create(validBuildingPayload());
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .patch(`/api/v1/notices/${created._id}`)
         .send({ expiresAt: null });
 
@@ -401,7 +406,7 @@ describe('Notices API (/api/v1/notices)', () => {
 
     it('rejects empty title', async () => {
       const created = await Notice.create(validAllResidentsPayload());
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .patch(`/api/v1/notices/${created._id}`)
         .send({ title: ' ' });
 
@@ -411,7 +416,7 @@ describe('Notices API (/api/v1/notices)', () => {
 
     it('rejects invalid category', async () => {
       const created = await Notice.create(validAllResidentsPayload());
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .patch(`/api/v1/notices/${created._id}`)
         .send({ category: 'flyer' });
 
@@ -421,10 +426,10 @@ describe('Notices API (/api/v1/notices)', () => {
 
     it('rejects invalid building', async () => {
       const created = await Notice.create(validAllResidentsPayload());
-      const invalid = await request(app)
+      const invalid = await authRequest(app, authToken)
         .patch(`/api/v1/notices/${created._id}`)
         .send({ building: 'invalid-id' });
-      const nonexistent = await request(app)
+      const nonexistent = await authRequest(app, authToken)
         .patch(`/api/v1/notices/${created._id}`)
         .send({ building: new mongoose.Types.ObjectId().toString() });
 
@@ -434,7 +439,7 @@ describe('Notices API (/api/v1/notices)', () => {
 
     it('rejects non-string description', async () => {
       const created = await Notice.create(validAllResidentsPayload());
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .patch(`/api/v1/notices/${created._id}`)
         .send({ description: 123 });
 
@@ -444,7 +449,7 @@ describe('Notices API (/api/v1/notices)', () => {
 
     it('rejects invalid expiresAt', async () => {
       const created = await Notice.create(validAllResidentsPayload());
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .patch(`/api/v1/notices/${created._id}`)
         .send({ expiresAt: 'not-a-date' });
 
@@ -453,7 +458,7 @@ describe('Notices API (/api/v1/notices)', () => {
     });
 
     it('returns 404 for nonexistent Notice', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .patch(`/api/v1/notices/${new mongoose.Types.ObjectId()}`)
         .send({ title: 'Missing' });
 
@@ -465,7 +470,7 @@ describe('Notices API (/api/v1/notices)', () => {
   describe('DELETE /api/v1/notices/:id', () => {
     it('deletes only the Notice', async () => {
       const created = await Notice.create(validBuildingPayload());
-      const res = await request(app).delete(`/api/v1/notices/${created._id}`);
+      const res = await authRequest(app, authToken).delete(`/api/v1/notices/${created._id}`);
 
       expect(res.status).toBe(200);
       expect(res.body.message).toBe('Notice deleted successfully');
@@ -474,7 +479,7 @@ describe('Notices API (/api/v1/notices)', () => {
     });
 
     it('returns 404 for a nonexistent Notice', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .delete(`/api/v1/notices/${new mongoose.Types.ObjectId()}`);
 
       expect(res.status).toBe(404);

@@ -12,8 +12,10 @@ const Complaint = require('../src/models/Complaint');
 const Bill = require('../src/models/Bill');
 const Payment = require('../src/models/Payment');
 const { startMemoryDb, stopMemoryDb } = require('./helpers/db');
+const { createTestAdmin, removeTestAdmin, getAuthToken, authRequest } = require('./helpers/auth');
 
 describe('Dashboard API (/api/v1/dashboard)', () => {
+  let authToken;
   let buildingA;
   let buildingB;
   let unit101;
@@ -21,9 +23,12 @@ describe('Dashboard API (/api/v1/dashboard)', () => {
 
   beforeAll(async () => {
     await startMemoryDb();
+    const admin = await createTestAdmin();
+    authToken = `Bearer ${getAuthToken(admin)}`;
   });
 
   afterAll(async () => {
+    await removeTestAdmin();
     await stopMemoryDb();
   });
 
@@ -45,7 +50,7 @@ describe('Dashboard API (/api/v1/dashboard)', () => {
 
   describe('GET /api/v1/dashboard', () => {
     it('returns all KPI fields', async () => {
-      const res = await request(app).get('/api/v1/dashboard');
+      const res = await authRequest(app, authToken).get('/api/v1/dashboard');
 
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
@@ -63,12 +68,12 @@ describe('Dashboard API (/api/v1/dashboard)', () => {
     });
 
     it('returns correct building count', async () => {
-      const res = await request(app).get('/api/v1/dashboard');
+      const res = await authRequest(app, authToken).get('/api/v1/dashboard');
       expect(res.body.data.buildings).toBe(2);
     });
 
     it('returns correct unit counts', async () => {
-      const res = await request(app).get('/api/v1/dashboard');
+      const res = await authRequest(app, authToken).get('/api/v1/dashboard');
       expect(res.body.data.units).toBe(2);
       expect(res.body.data.occupied).toBe(1);
       expect(res.body.data.vacant).toBe(1);
@@ -79,7 +84,7 @@ describe('Dashboard API (/api/v1/dashboard)', () => {
       await Maintenance.create({ title: 'Plumbing', unit: unit101._id, priority: 'medium', status: 'in-progress' });
       await Maintenance.create({ title: 'Done task', unit: unit101._id, priority: 'low', status: 'completed' });
 
-      const res = await request(app).get('/api/v1/dashboard');
+      const res = await authRequest(app, authToken).get('/api/v1/dashboard');
       expect(res.body.data.pendingMaintenance).toBe(2);
     });
 
@@ -88,7 +93,7 @@ describe('Dashboard API (/api/v1/dashboard)', () => {
       await Complaint.create({ subject: 'Noise', unit: unit101._id, priority: 'medium', status: 'in-progress' });
       await Complaint.create({ subject: 'Fixed', unit: unit101._id, priority: 'low', status: 'resolved' });
 
-      const res = await request(app).get('/api/v1/dashboard');
+      const res = await authRequest(app, authToken).get('/api/v1/dashboard');
       expect(res.body.data.openComplaints).toBe(2);
     });
 
@@ -97,7 +102,7 @@ describe('Dashboard API (/api/v1/dashboard)', () => {
       const bill2 = await Bill.create({ unit: unit101._id, period: 'Feb 2026', amount: 3000, status: 'overdue' });
       await Bill.create({ unit: unit101._id, period: 'Dec 2025', amount: 4000, status: 'paid', paidAt: new Date() });
 
-      const res = await request(app).get('/api/v1/dashboard');
+      const res = await authRequest(app, authToken).get('/api/v1/dashboard');
       expect(res.body.data.pendingPayments).toBe(2);
     });
 
@@ -109,7 +114,7 @@ describe('Dashboard API (/api/v1/dashboard)', () => {
       await Payment.create({ bill: bill1._id, amount: 5000, method: 'upi', status: 'completed', paidAt: now });
       await Payment.create({ bill: bill2._id, amount: 3000, method: 'cash', status: 'completed', paidAt: now });
 
-      const res = await request(app).get('/api/v1/dashboard');
+      const res = await authRequest(app, authToken).get('/api/v1/dashboard');
       expect(res.body.data.monthlyCollection).toBe(8000);
     });
 
@@ -122,7 +127,7 @@ describe('Dashboard API (/api/v1/dashboard)', () => {
       await Payment.create({ bill: bill2._id, amount: 3000, method: 'cash', status: 'pending', paidAt: now });
       await Payment.create({ bill: bill1._id, amount: 1000, method: 'card', status: 'failed', paidAt: now });
 
-      const res = await request(app).get('/api/v1/dashboard');
+      const res = await authRequest(app, authToken).get('/api/v1/dashboard');
       expect(res.body.data.monthlyCollection).toBe(5000);
     });
 
@@ -134,19 +139,19 @@ describe('Dashboard API (/api/v1/dashboard)', () => {
 
       await Payment.create({ bill: bill1._id, amount: 5000, method: 'upi', status: 'completed', paidAt: lastMonth });
 
-      const res = await request(app).get('/api/v1/dashboard');
+      const res = await authRequest(app, authToken).get('/api/v1/dashboard');
       expect(res.body.data.monthlyCollection).toBe(0);
     });
 
     it('returns monthlyCollection as 0 when no payments exist', async () => {
-      const res = await request(app).get('/api/v1/dashboard');
+      const res = await authRequest(app, authToken).get('/api/v1/dashboard');
       expect(res.body.data.monthlyCollection).toBe(0);
     });
 
     it('returns recent complaints with Unit and Building populated', async () => {
       await Complaint.create({ subject: 'Leak', unit: unit101._id, priority: 'high', status: 'open' });
 
-      const res = await request(app).get('/api/v1/dashboard');
+      const res = await authRequest(app, authToken).get('/api/v1/dashboard');
       expect(res.body.data.recentComplaints.length).toBe(1);
       expect(res.body.data.recentComplaints[0].unit.unitNumber).toBe('101');
       expect(res.body.data.recentComplaints[0].unit.building.name).toBe('Greenwood Heights');
@@ -157,14 +162,14 @@ describe('Dashboard API (/api/v1/dashboard)', () => {
         await Complaint.create({ subject: `Issue ${i}`, unit: unit101._id, priority: 'low', status: 'open' });
       }
 
-      const res = await request(app).get('/api/v1/dashboard');
+      const res = await authRequest(app, authToken).get('/api/v1/dashboard');
       expect(res.body.data.recentComplaints.length).toBe(5);
     });
 
     it('returns recent maintenance with Unit and Building populated', async () => {
       await Maintenance.create({ title: 'AC repair', unit: unit101._id, priority: 'high', status: 'open' });
 
-      const res = await request(app).get('/api/v1/dashboard');
+      const res = await authRequest(app, authToken).get('/api/v1/dashboard');
       expect(res.body.data.recentMaintenance.length).toBe(1);
       expect(res.body.data.recentMaintenance[0].unit.unitNumber).toBe('101');
       expect(res.body.data.recentMaintenance[0].unit.building.name).toBe('Greenwood Heights');
@@ -175,7 +180,7 @@ describe('Dashboard API (/api/v1/dashboard)', () => {
         await Maintenance.create({ title: `Task ${i}`, unit: unit101._id, priority: 'low', status: 'open' });
       }
 
-      const res = await request(app).get('/api/v1/dashboard');
+      const res = await authRequest(app, authToken).get('/api/v1/dashboard');
       expect(res.body.data.recentMaintenance.length).toBe(5);
     });
 
@@ -183,7 +188,7 @@ describe('Dashboard API (/api/v1/dashboard)', () => {
       const bill = await Bill.create({ unit: unit101._id, period: 'Jan 2026', amount: 5000, status: 'paid' });
       await Payment.create({ bill: bill._id, amount: 5000, method: 'upi', status: 'completed' });
 
-      const res = await request(app).get('/api/v1/dashboard');
+      const res = await authRequest(app, authToken).get('/api/v1/dashboard');
       expect(res.body.data.recentPayments.length).toBe(1);
       expect(res.body.data.recentPayments[0].bill.unit.unitNumber).toBe('101');
       expect(res.body.data.recentPayments[0].bill.unit.building.name).toBe('Greenwood Heights');
@@ -195,7 +200,7 @@ describe('Dashboard API (/api/v1/dashboard)', () => {
         await Payment.create({ bill: bill._id, amount: 100, method: 'cash', status: 'completed' });
       }
 
-      const res = await request(app).get('/api/v1/dashboard');
+      const res = await authRequest(app, authToken).get('/api/v1/dashboard');
       expect(res.body.data.recentPayments.length).toBe(5);
     });
 
@@ -203,7 +208,7 @@ describe('Dashboard API (/api/v1/dashboard)', () => {
       await Building.deleteMany({});
       await Unit.deleteMany({});
 
-      const res = await request(app).get('/api/v1/dashboard');
+      const res = await authRequest(app, authToken).get('/api/v1/dashboard');
 
       expect(res.status).toBe(200);
       expect(res.body.data.buildings).toBe(0);

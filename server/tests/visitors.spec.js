@@ -9,8 +9,10 @@ const Building = require('../src/models/Building');
 const Unit = require('../src/models/Unit');
 const Visitor = require('../src/models/Visitor');
 const { startMemoryDb, stopMemoryDb } = require('./helpers/db');
+const { createTestAdmin, removeTestAdmin, getAuthToken, authRequest } = require('./helpers/auth');
 
 describe('Visitors API (/api/v1/visitors)', () => {
+  let authToken;
   let sampleBuilding;
   let secondaryBuilding;
   let sampleUnit;
@@ -30,9 +32,12 @@ describe('Visitors API (/api/v1/visitors)', () => {
 
   beforeAll(async () => {
     await startMemoryDb();
+    const admin = await createTestAdmin();
+    authToken = `Bearer ${getAuthToken(admin)}`;
   });
 
   afterAll(async () => {
+    await removeTestAdmin();
     await stopMemoryDb();
   });
 
@@ -61,7 +66,7 @@ describe('Visitors API (/api/v1/visitors)', () => {
 
   describe('POST /api/v1/visitors', () => {
     it('creates a Visitor with a Unit and populates Unit and Building data', async () => {
-      const res = await request(app).post('/api/v1/visitors').send(validPayload());
+      const res = await authRequest(app, authToken).post('/api/v1/visitors').send(validPayload());
 
       expect(res.status).toBe(201);
       expect(res.body.success).toBe(true);
@@ -82,7 +87,7 @@ describe('Visitors API (/api/v1/visitors)', () => {
     });
 
     it('defaults phone and purpose to empty strings when omitted', async () => {
-      const res = await request(app).post('/api/v1/visitors').send(minimalPayload());
+      const res = await authRequest(app, authToken).post('/api/v1/visitors').send(minimalPayload());
 
       expect(res.status).toBe(201);
       expect(res.body.data.name).toBe('Delivery Person');
@@ -93,7 +98,7 @@ describe('Visitors API (/api/v1/visitors)', () => {
 
     it('defaults checkInAt to server time when omitted', async () => {
       const before = Date.now();
-      const res = await request(app).post('/api/v1/visitors').send(minimalPayload());
+      const res = await authRequest(app, authToken).post('/api/v1/visitors').send(minimalPayload());
       const after = Date.now();
 
       expect(res.status).toBe(201);
@@ -104,7 +109,7 @@ describe('Visitors API (/api/v1/visitors)', () => {
 
     it('accepts explicit checkInAt', async () => {
       const date = new Date('2026-08-15T10:00:00.000Z');
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .post('/api/v1/visitors')
         .send({ ...validPayload(), checkInAt: date.toISOString() });
 
@@ -113,10 +118,10 @@ describe('Visitors API (/api/v1/visitors)', () => {
     });
 
     it('rejects missing and empty name', async () => {
-      const missing = await request(app)
+      const missing = await authRequest(app, authToken)
         .post('/api/v1/visitors')
         .send({ ...validPayload(), name: undefined });
-      const empty = await request(app)
+      const empty = await authRequest(app, authToken)
         .post('/api/v1/visitors')
         .send({ ...validPayload(), name: '   ' });
 
@@ -127,7 +132,7 @@ describe('Visitors API (/api/v1/visitors)', () => {
     });
 
     it('rejects missing unit', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .post('/api/v1/visitors')
         .send({ name: 'Guest' });
 
@@ -136,7 +141,7 @@ describe('Visitors API (/api/v1/visitors)', () => {
     });
 
     it('rejects invalid Unit ID format', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .post('/api/v1/visitors')
         .send({ ...validPayload(), unit: 'invalid-id' });
 
@@ -145,7 +150,7 @@ describe('Visitors API (/api/v1/visitors)', () => {
     });
 
     it('rejects nonexistent Unit reference', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .post('/api/v1/visitors')
         .send({ ...validPayload(), unit: new mongoose.Types.ObjectId().toString() });
 
@@ -154,8 +159,8 @@ describe('Visitors API (/api/v1/visitors)', () => {
     });
 
     it('allows multiple Visitors for the same Unit', async () => {
-      const first = await request(app).post('/api/v1/visitors').send(validPayload());
-      const second = await request(app)
+      const first = await authRequest(app, authToken).post('/api/v1/visitors').send(validPayload());
+      const second = await authRequest(app, authToken)
         .post('/api/v1/visitors')
         .send({ ...validPayload(), name: 'Meera Pillai' });
 
@@ -165,7 +170,7 @@ describe('Visitors API (/api/v1/visitors)', () => {
     });
 
     it('rejects non-string phone', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .post('/api/v1/visitors')
         .send({ ...validPayload(), phone: 12345 });
 
@@ -174,7 +179,7 @@ describe('Visitors API (/api/v1/visitors)', () => {
     });
 
     it('rejects non-string purpose', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .post('/api/v1/visitors')
         .send({ ...validPayload(), purpose: 12345 });
 
@@ -183,7 +188,7 @@ describe('Visitors API (/api/v1/visitors)', () => {
     });
 
     it('rejects invalid checkInAt', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .post('/api/v1/visitors')
         .send({ ...validPayload(), checkInAt: 'not-a-date' });
 
@@ -192,7 +197,7 @@ describe('Visitors API (/api/v1/visitors)', () => {
     });
 
     it('trims whitespace from name, phone, and purpose', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .post('/api/v1/visitors')
         .send({ name: ' Vikram Singh ', phone: ' +91 98111 22334 ', purpose: ' Guest ', unit: sampleUnit._id.toString() });
 
@@ -205,7 +210,7 @@ describe('Visitors API (/api/v1/visitors)', () => {
 
   describe('GET /api/v1/visitors', () => {
     it('returns an empty list when no visitors exist', async () => {
-      const res = await request(app).get('/api/v1/visitors');
+      const res = await authRequest(app, authToken).get('/api/v1/visitors');
 
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
@@ -214,7 +219,7 @@ describe('Visitors API (/api/v1/visitors)', () => {
 
     it('returns Visitors with populated Unit and Building data', async () => {
       await Visitor.create(validPayload());
-      const res = await request(app).get('/api/v1/visitors');
+      const res = await authRequest(app, authToken).get('/api/v1/visitors');
 
       expect(res.status).toBe(200);
       expect(res.body.data).toHaveLength(1);
@@ -236,7 +241,7 @@ describe('Visitors API (/api/v1/visitors)', () => {
         checkInAt: new Date('2026-08-12T09:00:00Z'),
       });
 
-      const res = await request(app).get('/api/v1/visitors');
+      const res = await authRequest(app, authToken).get('/api/v1/visitors');
 
       expect(res.body.data).toHaveLength(2);
       expect(res.body.data[0].name).toBe('Second Visitor');
@@ -249,7 +254,7 @@ describe('Visitors API (/api/v1/visitors)', () => {
         { name: 'Meera Pillai', unit: secondaryUnit._id, phone: '+91 98111 22335', purpose: 'Courier' },
       ]);
 
-      const res = await request(app).get('/api/v1/visitors?search=vikram');
+      const res = await authRequest(app, authToken).get('/api/v1/visitors?search=vikram');
 
       expect(res.body.data).toHaveLength(1);
       expect(res.body.data[0].name).toBe('Vikram Singh');
@@ -261,7 +266,7 @@ describe('Visitors API (/api/v1/visitors)', () => {
         { name: 'Meera Pillai', unit: secondaryUnit._id, phone: '+91 98111 22335', purpose: 'Courier' },
       ]);
 
-      const res = await request(app).get('/api/v1/visitors?search=22335');
+      const res = await authRequest(app, authToken).get('/api/v1/visitors?search=22335');
 
       expect(res.body.data).toHaveLength(1);
       expect(res.body.data[0].name).toBe('Meera Pillai');
@@ -273,7 +278,7 @@ describe('Visitors API (/api/v1/visitors)', () => {
         { name: 'Meera Pillai', unit: secondaryUnit._id, phone: '+91 98111 22335', purpose: 'Courier' },
       ]);
 
-      const res = await request(app).get('/api/v1/visitors?search=courier');
+      const res = await authRequest(app, authToken).get('/api/v1/visitors?search=courier');
 
       expect(res.body.data).toHaveLength(1);
       expect(res.body.data[0].purpose).toBe('Courier');
@@ -285,9 +290,9 @@ describe('Visitors API (/api/v1/visitors)', () => {
         { name: 'AC Repair (Unit X)', unit: secondaryUnit._id, purpose: 'Maintenance' },
       ]);
 
-      const specialName = await request(app).get('/api/v1/visitors?search=AC%20Repair%20(Unit%20X)');
-      const danglingBracket = await request(app).get('/api/v1/visitors?search=%5B');
-      const literalDot = await request(app).get('/api/v1/visitors?search=AC.Repair');
+      const specialName = await authRequest(app, authToken).get('/api/v1/visitors?search=AC%20Repair%20(Unit%20X)');
+      const danglingBracket = await authRequest(app, authToken).get('/api/v1/visitors?search=%5B');
+      const literalDot = await authRequest(app, authToken).get('/api/v1/visitors?search=AC.Repair');
 
       expect(specialName.status).toBe(200);
       expect(specialName.body.data).toHaveLength(1);
@@ -306,7 +311,7 @@ describe('Visitors API (/api/v1/visitors)', () => {
         { name: 'Meera Pillai', unit: secondaryUnit._id, purpose: 'Courier' },
       ]);
 
-      const res = await request(app).get(`/api/v1/visitors?unit=${sampleUnit._id}`);
+      const res = await authRequest(app, authToken).get(`/api/v1/visitors?unit=${sampleUnit._id}`);
 
       expect(res.body.data).toHaveLength(1);
       expect(res.body.data[0].unit.unitNumber).toBe('A-1101');
@@ -318,7 +323,7 @@ describe('Visitors API (/api/v1/visitors)', () => {
         { name: 'Vikram Singh', unit: secondaryUnit._id, purpose: 'Service' },
       ]);
 
-      const res = await request(app).get(
+      const res = await authRequest(app, authToken).get(
         `/api/v1/visitors?search=vikram&unit=${sampleUnit._id}`
       );
 
@@ -328,7 +333,7 @@ describe('Visitors API (/api/v1/visitors)', () => {
 
     it('returns empty array for invalid unit ID in filter', async () => {
       await Visitor.create(validPayload());
-      const res = await request(app).get('/api/v1/visitors?unit=invalid-id');
+      const res = await authRequest(app, authToken).get('/api/v1/visitors?unit=invalid-id');
 
       expect(res.status).toBe(200);
       expect(res.body.data).toEqual([]);
@@ -338,7 +343,7 @@ describe('Visitors API (/api/v1/visitors)', () => {
   describe('GET /api/v1/visitors/:id', () => {
     it('returns one populated Visitor', async () => {
       const created = await Visitor.create(validPayload());
-      const res = await request(app).get(`/api/v1/visitors/${created._id}`);
+      const res = await authRequest(app, authToken).get(`/api/v1/visitors/${created._id}`);
 
       expect(res.status).toBe(200);
       expect(res.body.data.name).toBe('Vikram Singh');
@@ -347,8 +352,8 @@ describe('Visitors API (/api/v1/visitors)', () => {
     });
 
     it('returns 404 for invalid and nonexistent Visitor IDs', async () => {
-      const invalid = await request(app).get('/api/v1/visitors/invalid-id');
-      const nonexistent = await request(app)
+      const invalid = await authRequest(app, authToken).get('/api/v1/visitors/invalid-id');
+      const nonexistent = await authRequest(app, authToken)
         .get(`/api/v1/visitors/${new mongoose.Types.ObjectId()}`);
 
       expect(invalid.status).toBe(404);
@@ -361,7 +366,7 @@ describe('Visitors API (/api/v1/visitors)', () => {
   describe('PATCH /api/v1/visitors/:id', () => {
     it('updates name, phone, and purpose', async () => {
       const created = await Visitor.create(validPayload());
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .patch(`/api/v1/visitors/${created._id}`)
         .send({ name: ' Vikram Singh (updated) ', phone: '+91 99999 00000', purpose: 'Maintenance' });
 
@@ -375,7 +380,7 @@ describe('Visitors API (/api/v1/visitors)', () => {
 
     it('allows reassignment to another existing Unit', async () => {
       const created = await Visitor.create(validPayload());
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .patch(`/api/v1/visitors/${created._id}`)
         .send({ unit: secondaryUnit._id.toString() });
 
@@ -387,7 +392,7 @@ describe('Visitors API (/api/v1/visitors)', () => {
     it('sets checkOutAt to checkout a visitor', async () => {
       const created = await Visitor.create(validPayload());
       const checkoutDate = new Date('2026-08-18T14:30:00Z');
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .patch(`/api/v1/visitors/${created._id}`)
         .send({ checkOutAt: checkoutDate.toISOString() });
 
@@ -400,7 +405,7 @@ describe('Visitors API (/api/v1/visitors)', () => {
         ...validPayload(),
         checkOutAt: new Date(),
       });
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .patch(`/api/v1/visitors/${created._id}`)
         .send({ checkOutAt: null });
 
@@ -411,7 +416,7 @@ describe('Visitors API (/api/v1/visitors)', () => {
     it('updates checkInAt', async () => {
       const created = await Visitor.create(validPayload());
       const newDate = new Date('2026-08-20T08:00:00Z');
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .patch(`/api/v1/visitors/${created._id}`)
         .send({ checkInAt: newDate.toISOString() });
 
@@ -421,7 +426,7 @@ describe('Visitors API (/api/v1/visitors)', () => {
 
     it('rejects empty name', async () => {
       const created = await Visitor.create(validPayload());
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .patch(`/api/v1/visitors/${created._id}`)
         .send({ name: ' ' });
 
@@ -431,10 +436,10 @@ describe('Visitors API (/api/v1/visitors)', () => {
 
     it('rejects invalid Unit on update', async () => {
       const created = await Visitor.create(validPayload());
-      const invalid = await request(app)
+      const invalid = await authRequest(app, authToken)
         .patch(`/api/v1/visitors/${created._id}`)
         .send({ unit: 'invalid-id' });
-      const nonexistent = await request(app)
+      const nonexistent = await authRequest(app, authToken)
         .patch(`/api/v1/visitors/${created._id}`)
         .send({ unit: new mongoose.Types.ObjectId().toString() });
 
@@ -444,7 +449,7 @@ describe('Visitors API (/api/v1/visitors)', () => {
 
     it('rejects non-string phone on update', async () => {
       const created = await Visitor.create(validPayload());
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .patch(`/api/v1/visitors/${created._id}`)
         .send({ phone: 12345 });
 
@@ -454,7 +459,7 @@ describe('Visitors API (/api/v1/visitors)', () => {
 
     it('rejects non-string purpose on update', async () => {
       const created = await Visitor.create(validPayload());
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .patch(`/api/v1/visitors/${created._id}`)
         .send({ purpose: 12345 });
 
@@ -464,7 +469,7 @@ describe('Visitors API (/api/v1/visitors)', () => {
 
     it('rejects invalid checkInAt on update', async () => {
       const created = await Visitor.create(validPayload());
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .patch(`/api/v1/visitors/${created._id}`)
         .send({ checkInAt: 'not-a-date' });
 
@@ -474,7 +479,7 @@ describe('Visitors API (/api/v1/visitors)', () => {
 
     it('rejects invalid checkOutAt on update', async () => {
       const created = await Visitor.create(validPayload());
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .patch(`/api/v1/visitors/${created._id}`)
         .send({ checkOutAt: 'not-a-date' });
 
@@ -483,7 +488,7 @@ describe('Visitors API (/api/v1/visitors)', () => {
     });
 
     it('returns 404 for nonexistent Visitor', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .patch(`/api/v1/visitors/${new mongoose.Types.ObjectId()}`)
         .send({ name: 'Missing' });
 
@@ -495,7 +500,7 @@ describe('Visitors API (/api/v1/visitors)', () => {
   describe('DELETE /api/v1/visitors/:id', () => {
     it('deletes only the Visitor', async () => {
       const created = await Visitor.create(validPayload());
-      const res = await request(app).delete(`/api/v1/visitors/${created._id}`);
+      const res = await authRequest(app, authToken).delete(`/api/v1/visitors/${created._id}`);
 
       expect(res.status).toBe(200);
       expect(res.body.message).toBe('Visitor deleted successfully');
@@ -505,7 +510,7 @@ describe('Visitors API (/api/v1/visitors)', () => {
     });
 
     it('returns 404 for a nonexistent Visitor', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .delete(`/api/v1/visitors/${new mongoose.Types.ObjectId()}`);
 
       expect(res.status).toBe(404);

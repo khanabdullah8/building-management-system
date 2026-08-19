@@ -8,8 +8,10 @@ const app = require('../src/app');
 const Building = require('../src/models/Building');
 const Expense = require('../src/models/Expense');
 const { startMemoryDb, stopMemoryDb } = require('./helpers/db');
+const { createTestAdmin, removeTestAdmin, getAuthToken, authRequest } = require('./helpers/auth');
 
 describe('Expense API (/api/v1/expenses)', () => {
+  let authToken;
   let sampleBuilding;
   let secondaryBuilding;
 
@@ -29,9 +31,12 @@ describe('Expense API (/api/v1/expenses)', () => {
 
   beforeAll(async () => {
     await startMemoryDb();
+    const admin = await createTestAdmin();
+    authToken = `Bearer ${getAuthToken(admin)}`;
   });
 
   afterAll(async () => {
+    await removeTestAdmin();
     await stopMemoryDb();
   });
 
@@ -51,7 +56,7 @@ describe('Expense API (/api/v1/expenses)', () => {
 
   describe('POST /api/v1/expenses', () => {
     it('creates an expense with Building populated', async () => {
-      const res = await request(app).post('/api/v1/expenses').send(validPayload());
+      const res = await authRequest(app, authToken).post('/api/v1/expenses').send(validPayload());
 
       expect(res.status).toBe(201);
       expect(res.body.success).toBe(true);
@@ -67,7 +72,7 @@ describe('Expense API (/api/v1/expenses)', () => {
     });
 
     it('defaults status to pending and date to now when omitted', async () => {
-      const res = await request(app).post('/api/v1/expenses').send(minimalPayload());
+      const res = await authRequest(app, authToken).post('/api/v1/expenses').send(minimalPayload());
 
       expect(res.status).toBe(201);
       expect(res.body.data.status).toBe('pending');
@@ -75,14 +80,14 @@ describe('Expense API (/api/v1/expenses)', () => {
     });
 
     it('defaults description to empty string when omitted', async () => {
-      const res = await request(app).post('/api/v1/expenses').send(minimalPayload());
+      const res = await authRequest(app, authToken).post('/api/v1/expenses').send(minimalPayload());
 
       expect(res.status).toBe(201);
       expect(res.body.data.description).toBe('');
     });
 
     it('accepts explicit status', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .post('/api/v1/expenses')
         .send({ ...minimalPayload(), status: 'approved' });
 
@@ -94,7 +99,7 @@ describe('Expense API (/api/v1/expenses)', () => {
       const categories = ['maintenance', 'utilities', 'housekeeping', 'security', 'landscaping', 'admin', 'other'];
 
       for (const category of categories) {
-        const res = await request(app)
+        const res = await authRequest(app, authToken)
           .post('/api/v1/expenses')
           .send({ ...minimalPayload(), category, amount: 100 + categories.indexOf(category) });
 
@@ -104,7 +109,7 @@ describe('Expense API (/api/v1/expenses)', () => {
     });
 
     it('rejects missing category', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .post('/api/v1/expenses')
         .send({ building: sampleBuilding._id.toString(), amount: 100 });
 
@@ -113,7 +118,7 @@ describe('Expense API (/api/v1/expenses)', () => {
     });
 
     it('rejects invalid category', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .post('/api/v1/expenses')
         .send({ ...minimalPayload(), category: 'invalid-cat' });
 
@@ -122,7 +127,7 @@ describe('Expense API (/api/v1/expenses)', () => {
     });
 
     it('rejects missing building', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .post('/api/v1/expenses')
         .send({ category: 'utilities', amount: 100 });
 
@@ -131,7 +136,7 @@ describe('Expense API (/api/v1/expenses)', () => {
     });
 
     it('rejects invalid building ID format', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .post('/api/v1/expenses')
         .send({ ...minimalPayload(), building: 'invalid-id' });
 
@@ -140,7 +145,7 @@ describe('Expense API (/api/v1/expenses)', () => {
     });
 
     it('rejects nonexistent building reference', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .post('/api/v1/expenses')
         .send({ ...minimalPayload(), building: new mongoose.Types.ObjectId().toString() });
 
@@ -149,7 +154,7 @@ describe('Expense API (/api/v1/expenses)', () => {
     });
 
     it('rejects missing amount', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .post('/api/v1/expenses')
         .send({ category: 'utilities', building: sampleBuilding._id.toString() });
 
@@ -158,7 +163,7 @@ describe('Expense API (/api/v1/expenses)', () => {
     });
 
     it('rejects amount of 0', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .post('/api/v1/expenses')
         .send({ ...minimalPayload(), amount: 0 });
 
@@ -167,7 +172,7 @@ describe('Expense API (/api/v1/expenses)', () => {
     });
 
     it('rejects negative amount', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .post('/api/v1/expenses')
         .send({ ...minimalPayload(), amount: -100 });
 
@@ -176,7 +181,7 @@ describe('Expense API (/api/v1/expenses)', () => {
     });
 
     it('rejects non-numeric amount', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .post('/api/v1/expenses')
         .send({ ...minimalPayload(), amount: 'abc' });
 
@@ -185,7 +190,7 @@ describe('Expense API (/api/v1/expenses)', () => {
     });
 
     it('rejects invalid date format', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .post('/api/v1/expenses')
         .send({ ...minimalPayload(), date: 'not-a-date' });
 
@@ -194,7 +199,7 @@ describe('Expense API (/api/v1/expenses)', () => {
     });
 
     it('rejects invalid status', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .post('/api/v1/expenses')
         .send({ ...minimalPayload(), status: 'invalid-status' });
 
@@ -203,7 +208,7 @@ describe('Expense API (/api/v1/expenses)', () => {
     });
 
     it('trims category', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .post('/api/v1/expenses')
         .send({ ...minimalPayload(), category: '  utilities  ' });
 
@@ -214,7 +219,7 @@ describe('Expense API (/api/v1/expenses)', () => {
 
   describe('GET /api/v1/expenses', () => {
     it('returns an empty list when no expenses exist', async () => {
-      const res = await request(app).get('/api/v1/expenses');
+      const res = await authRequest(app, authToken).get('/api/v1/expenses');
 
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
@@ -223,7 +228,7 @@ describe('Expense API (/api/v1/expenses)', () => {
 
     it('returns expenses with populated Building data', async () => {
       await Expense.create(validPayload());
-      const res = await request(app).get('/api/v1/expenses');
+      const res = await authRequest(app, authToken).get('/api/v1/expenses');
 
       expect(res.status).toBe(200);
       expect(res.body.data).toHaveLength(1);
@@ -244,7 +249,7 @@ describe('Expense API (/api/v1/expenses)', () => {
         date: new Date('2026-08-15'),
       });
 
-      const res = await request(app).get('/api/v1/expenses');
+      const res = await authRequest(app, authToken).get('/api/v1/expenses');
 
       expect(res.body.data).toHaveLength(2);
       expect(res.body.data[0].category).toBe('housekeeping');
@@ -259,7 +264,7 @@ describe('Expense API (/api/v1/expenses)', () => {
         description: 'Cleaning supplies',
       });
 
-      const res = await request(app).get('/api/v1/expenses?search=utilities');
+      const res = await authRequest(app, authToken).get('/api/v1/expenses?search=utilities');
 
       expect(res.body.data).toHaveLength(1);
       expect(res.body.data[0].category).toBe('utilities');
@@ -273,7 +278,7 @@ describe('Expense API (/api/v1/expenses)', () => {
         description: 'Cleaning supplies',
       });
 
-      const res = await request(app).get('/api/v1/expenses?search=electricity');
+      const res = await authRequest(app, authToken).get('/api/v1/expenses?search=electricity');
 
       expect(res.body.data).toHaveLength(1);
       expect(res.body.data[0].description).toBe('Common area electricity bill');
@@ -282,7 +287,7 @@ describe('Expense API (/api/v1/expenses)', () => {
     it('searches case-insensitively', async () => {
       await Expense.create(validPayload());
 
-      const res = await request(app).get('/api/v1/expenses?search=UTILITIES');
+      const res = await authRequest(app, authToken).get('/api/v1/expenses?search=UTILITIES');
 
       expect(res.body.data).toHaveLength(1);
     });
@@ -294,7 +299,7 @@ describe('Expense API (/api/v1/expenses)', () => {
         description: 'A (B) expense',
       });
 
-      const res = await request(app).get('/api/v1/expenses?search=(B)');
+      const res = await authRequest(app, authToken).get('/api/v1/expenses?search=(B)');
 
       expect(res.body.data).toHaveLength(1);
       expect(res.body.data[0].description).toBe('A (B) expense');
@@ -308,7 +313,7 @@ describe('Expense API (/api/v1/expenses)', () => {
         category: 'housekeeping',
       });
 
-      const res = await request(app).get(
+      const res = await authRequest(app, authToken).get(
         `/api/v1/expenses?building=${sampleBuilding._id}`
       );
 
@@ -323,7 +328,7 @@ describe('Expense API (/api/v1/expenses)', () => {
         status: 'approved',
       });
 
-      const res = await request(app).get('/api/v1/expenses?status=pending');
+      const res = await authRequest(app, authToken).get('/api/v1/expenses?status=pending');
 
       expect(res.body.data).toHaveLength(1);
       expect(res.body.data[0].status).toBe('pending');
@@ -336,7 +341,7 @@ describe('Expense API (/api/v1/expenses)', () => {
         category: 'housekeeping',
       });
 
-      const res = await request(app).get('/api/v1/expenses?category=utilities');
+      const res = await authRequest(app, authToken).get('/api/v1/expenses?category=utilities');
 
       expect(res.body.data).toHaveLength(1);
       expect(res.body.data[0].category).toBe('utilities');
@@ -350,7 +355,7 @@ describe('Expense API (/api/v1/expenses)', () => {
         category: 'utilities',
       });
 
-      const res = await request(app).get(
+      const res = await authRequest(app, authToken).get(
         `/api/v1/expenses?search=electricity&building=${sampleBuilding._id}`
       );
 
@@ -360,7 +365,7 @@ describe('Expense API (/api/v1/expenses)', () => {
 
     it('returns empty array for invalid building ID in filter', async () => {
       await Expense.create(validPayload());
-      const res = await request(app).get('/api/v1/expenses?building=invalid-id');
+      const res = await authRequest(app, authToken).get('/api/v1/expenses?building=invalid-id');
 
       expect(res.status).toBe(200);
       expect(res.body.data).toEqual([]);
@@ -368,7 +373,7 @@ describe('Expense API (/api/v1/expenses)', () => {
 
     it('returns empty array for invalid status in filter', async () => {
       await Expense.create(validPayload());
-      const res = await request(app).get('/api/v1/expenses?status=invalid');
+      const res = await authRequest(app, authToken).get('/api/v1/expenses?status=invalid');
 
       expect(res.status).toBe(200);
       expect(res.body.data).toEqual([]);
@@ -376,7 +381,7 @@ describe('Expense API (/api/v1/expenses)', () => {
 
     it('returns empty array for invalid category in filter', async () => {
       await Expense.create(validPayload());
-      const res = await request(app).get('/api/v1/expenses?category=invalid');
+      const res = await authRequest(app, authToken).get('/api/v1/expenses?category=invalid');
 
       expect(res.status).toBe(200);
       expect(res.body.data).toEqual([]);
@@ -386,7 +391,7 @@ describe('Expense API (/api/v1/expenses)', () => {
   describe('GET /api/v1/expenses/:id', () => {
     it('returns one populated expense', async () => {
       const created = await Expense.create(validPayload());
-      const res = await request(app).get(`/api/v1/expenses/${created._id}`);
+      const res = await authRequest(app, authToken).get(`/api/v1/expenses/${created._id}`);
 
       expect(res.status).toBe(200);
       expect(res.body.data.category).toBe('utilities');
@@ -395,8 +400,8 @@ describe('Expense API (/api/v1/expenses)', () => {
     });
 
     it('returns 404 for invalid and nonexistent IDs', async () => {
-      const invalid = await request(app).get('/api/v1/expenses/invalid-id');
-      const nonexistent = await request(app)
+      const invalid = await authRequest(app, authToken).get('/api/v1/expenses/invalid-id');
+      const nonexistent = await authRequest(app, authToken)
         .get(`/api/v1/expenses/${new mongoose.Types.ObjectId()}`);
 
       expect(invalid.status).toBe(404);
@@ -409,7 +414,7 @@ describe('Expense API (/api/v1/expenses)', () => {
   describe('PATCH /api/v1/expenses/:id', () => {
     it('updates category, amount, description, and status', async () => {
       const created = await Expense.create(validPayload());
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .patch(`/api/v1/expenses/${created._id}`)
         .send({
           category: 'security',
@@ -429,7 +434,7 @@ describe('Expense API (/api/v1/expenses)', () => {
 
     it('updates date', async () => {
       const created = await Expense.create(validPayload());
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .patch(`/api/v1/expenses/${created._id}`)
         .send({ date: '2026-09-01' });
 
@@ -440,7 +445,7 @@ describe('Expense API (/api/v1/expenses)', () => {
 
     it('rejects empty category on update', async () => {
       const created = await Expense.create(validPayload());
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .patch(`/api/v1/expenses/${created._id}`)
         .send({ category: '   ' });
 
@@ -450,7 +455,7 @@ describe('Expense API (/api/v1/expenses)', () => {
 
     it('rejects invalid category on update', async () => {
       const created = await Expense.create(validPayload());
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .patch(`/api/v1/expenses/${created._id}`)
         .send({ category: 'invalid-cat' });
 
@@ -460,7 +465,7 @@ describe('Expense API (/api/v1/expenses)', () => {
 
     it('rejects amount of 0 on update', async () => {
       const created = await Expense.create(validPayload());
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .patch(`/api/v1/expenses/${created._id}`)
         .send({ amount: 0 });
 
@@ -470,7 +475,7 @@ describe('Expense API (/api/v1/expenses)', () => {
 
     it('rejects negative amount on update', async () => {
       const created = await Expense.create(validPayload());
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .patch(`/api/v1/expenses/${created._id}`)
         .send({ amount: -50 });
 
@@ -480,7 +485,7 @@ describe('Expense API (/api/v1/expenses)', () => {
 
     it('rejects non-numeric amount on update', async () => {
       const created = await Expense.create(validPayload());
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .patch(`/api/v1/expenses/${created._id}`)
         .send({ amount: 'abc' });
 
@@ -490,7 +495,7 @@ describe('Expense API (/api/v1/expenses)', () => {
 
     it('rejects invalid status on update', async () => {
       const created = await Expense.create(validPayload());
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .patch(`/api/v1/expenses/${created._id}`)
         .send({ status: 'invalid-status' });
 
@@ -500,7 +505,7 @@ describe('Expense API (/api/v1/expenses)', () => {
 
     it('rejects invalid date on update', async () => {
       const created = await Expense.create(validPayload());
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .patch(`/api/v1/expenses/${created._id}`)
         .send({ date: 'not-a-date' });
 
@@ -509,7 +514,7 @@ describe('Expense API (/api/v1/expenses)', () => {
     });
 
     it('returns 404 for nonexistent expense', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .patch(`/api/v1/expenses/${new mongoose.Types.ObjectId()}`)
         .send({ amount: 100 });
 
@@ -521,7 +526,7 @@ describe('Expense API (/api/v1/expenses)', () => {
   describe('DELETE /api/v1/expenses/:id', () => {
     it('deletes only the expense record', async () => {
       const created = await Expense.create(validPayload());
-      const res = await request(app).delete(`/api/v1/expenses/${created._id}`);
+      const res = await authRequest(app, authToken).delete(`/api/v1/expenses/${created._id}`);
 
       expect(res.status).toBe(200);
       expect(res.body.message).toBe('Expense deleted successfully');
@@ -530,7 +535,7 @@ describe('Expense API (/api/v1/expenses)', () => {
     });
 
     it('returns 404 for a nonexistent expense', async () => {
-      const res = await request(app)
+      const res = await authRequest(app, authToken)
         .delete(`/api/v1/expenses/${new mongoose.Types.ObjectId()}`);
 
       expect(res.status).toBe(404);
