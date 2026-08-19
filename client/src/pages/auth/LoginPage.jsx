@@ -1,15 +1,31 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { useAuth } from '../../hooks/useAuth'
 import './LoginPage.css'
 
-// Phase 2: authentication entry point. JWT-backed sign-in will be
-// wired in a later phase — submitting the form currently only shows
-// a notice and does not authenticate.
 function LoginPage() {
-  const [notice, setNotice] = useState(false)
+  const navigate = useNavigate()
+  const { login } = useAuth()
+  const [error, setError] = useState(null)
+  const [submitting, setSubmitting] = useState(false)
 
-  const handleSubmit = (event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault()
-    setNotice(true)
+    setError(null)
+    setSubmitting(true)
+
+    const formData = new FormData(event.currentTarget)
+    const email = formData.get('email')
+    const password = formData.get('password')
+
+    try {
+      await login(email, password)
+      navigate('/', { replace: true })
+    } catch (err) {
+      setError(err.message || 'Login failed. Please try again.')
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   return (
@@ -30,13 +46,13 @@ function LoginPage() {
             <span>Password</span>
             <input type="password" name="password" placeholder="••••••••" autoComplete="current-password" required />
           </label>
-          <button type="submit" className="btn btn-primary login-submit">
-            Sign in
+          <button type="submit" className="btn btn-primary login-submit" disabled={submitting}>
+            {submitting ? 'Signing in…' : 'Sign in'}
           </button>
         </form>
-        {notice ? (
-          <p className="login-note" role="status">
-            Authentication is not implemented yet (Phase 2).
+        {error ? (
+          <p className="login-error" role="alert">
+            {error}
           </p>
         ) : null}
       </div>

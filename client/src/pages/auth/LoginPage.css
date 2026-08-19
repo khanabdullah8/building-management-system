@@ -100,3 +100,12 @@
   padding: 8px 12px;
   width: 100%;
 }
+
+.login-error {
+  font-size: 13px;
+  color: var(--color-danger);
+  background: var(--color-danger-soft);
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+  width: 100%;
+}

@@ -46,6 +46,15 @@
   color: var(--color-text);
 }
 
+.btn-sm {
+  padding: 4px 10px;
+  font-size: 13px;
+}
+
+.header-logout {
+  margin-left: var(--space-2);
+}
+
 @media (max-width: 900px) {
   .menu-toggle {
     display: inline-flex;

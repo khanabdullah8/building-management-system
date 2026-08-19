@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import App from './App'
 import http from './api/http'
+import { AuthProvider } from './context/AuthProvider'
 
 vi.mock('./api/http', () => ({
   default: {
@@ -11,48 +12,70 @@ vi.mock('./api/http', () => ({
     post: vi.fn(),
     put: vi.fn(),
     delete: vi.fn(),
+    interceptors: {
+      request: { use: vi.fn() },
+      response: { use: vi.fn() },
+    },
   },
 }))
+
+const authUser = { id: 'u1', name: 'Test Admin', email: 'admin@test.local', role: 'admin' }
 
 function renderApp(initialPath = '/') {
   return render(
     <MemoryRouter initialEntries={[initialPath]}>
-      <App />
+      <AuthProvider>
+        <App />
+      </AuthProvider>
     </MemoryRouter>,
   )
+}
+
+function mockAuth(user = authUser) {
+  http.get.mockImplementation((url) => {
+    if (url === '/v1/auth/me') {
+      if (user) {
+        return Promise.resolve({ data: { success: true, data: { user } } })
+      }
+      return Promise.reject({ response: { status: 401 } })
+    }
+    if (url === '/v1/dashboard') {
+      return Promise.resolve({
+        data: {
+          success: true,
+          data: {
+            buildings: 0, units: 0, occupied: 0, vacant: 0,
+            pendingMaintenance: 0, openComplaints: 0, pendingPayments: 0,
+            monthlyCollection: 0, recentComplaints: [], recentMaintenance: [],
+            recentPayments: [],
+          },
+        },
+      })
+    }
+    return Promise.resolve({ data: { success: true, data: [] } })
+  })
 }
 
 describe('App shell', () => {
   beforeEach(() => {
     vi.resetAllMocks()
-    http.get.mockImplementation((url) => {
-      if (url === '/v1/dashboard') {
-        return Promise.resolve({
-          data: {
-            success: true,
-            data: {
-              buildings: 0, units: 0, occupied: 0, vacant: 0,
-              pendingMaintenance: 0, openComplaints: 0, pendingPayments: 0,
-              monthlyCollection: 0, recentComplaints: [], recentMaintenance: [],
-              recentPayments: [],
-            },
-          },
-        })
-      }
-      return Promise.resolve({ data: { success: true, data: [] } })
-    })
+    localStorage.clear()
+    localStorage.setItem('token', 'test-jwt-token')
+    mockAuth()
   })
 
   it('renders the layout with the dashboard at /', async () => {
     renderApp()
 
-    expect(screen.getByRole('link', { name: 'Buildings' })).toBeInTheDocument()
     expect(await screen.findByText('Total Buildings')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Buildings' })).toBeInTheDocument()
   })
 
   it('navigates to the buildings page', async () => {
     const user = userEvent.setup()
     renderApp()
+
+    expect(await screen.findByText('Total Buildings')).toBeInTheDocument()
 
     await user.click(screen.getByRole('link', { name: 'Buildings' }))
 
@@ -62,15 +85,24 @@ describe('App shell', () => {
     ).toBeInTheDocument()
   })
 
-  it('renders the login page at /login', () => {
+  it('renders the login page at /login', async () => {
     renderApp('/login')
 
-    expect(screen.getByRole('heading', { name: 'Sign in' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Sign in' })).toBeInTheDocument()
   })
 
-  it('renders a 404 page for unknown routes', () => {
+  it('renders a 404 page for unknown routes', async () => {
     renderApp('/does-not-exist')
 
-    expect(screen.getByText('404')).toBeInTheDocument()
+    expect(await screen.findByText('404')).toBeInTheDocument()
+  })
+
+  it('redirects to /login when not authenticated', async () => {
+    localStorage.clear()
+    mockAuth(null)
+
+    renderApp('/')
+
+    expect(await screen.findByRole('heading', { name: 'Sign in' })).toBeInTheDocument()
   })
 })

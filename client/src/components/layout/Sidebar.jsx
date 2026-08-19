@@ -1,25 +1,32 @@
 import { NavLink } from 'react-router-dom'
+import { useAuth } from '../../hooks/useAuth'
 import './Sidebar.css'
 
 const NAV_ITEMS = [
   { to: '/', label: 'Dashboard', end: true },
-  { to: '/buildings', label: 'Buildings' },
-  { to: '/units', label: 'Units' },
-  { to: '/residents', label: 'Residents' },
+  { to: '/buildings', label: 'Buildings', roles: ['admin', 'staff'] },
+  { to: '/units', label: 'Units', roles: ['admin', 'staff'] },
+  { to: '/residents', label: 'Residents', roles: ['admin', 'staff'] },
   { to: '/maintenance', label: 'Maintenance' },
   { to: '/complaints', label: 'Complaints' },
   { to: '/notices', label: 'Notices' },
-  { to: '/visitors', label: 'Visitors' },
-  { to: '/parking', label: 'Parking' },
+  { to: '/visitors', label: 'Visitors', roles: ['admin', 'staff'] },
+  { to: '/parking', label: 'Parking', roles: ['admin', 'staff'] },
   { to: '/billing', label: 'Billing' },
   { to: '/payments', label: 'Payments' },
-  { to: '/expenses', label: 'Expenses' },
-  { to: '/users', label: 'Users' },
+  { to: '/expenses', label: 'Expenses', roles: ['admin', 'staff'] },
+  { to: '/users', label: 'Users', roles: ['admin'] },
   { to: '/notifications', label: 'Notifications' },
-  { to: '/audit-logs', label: 'Audit Logs' },
+  { to: '/audit-logs', label: 'Audit Logs', roles: ['admin'] },
 ]
 
 function Sidebar({ open, onClose }) {
+  const { user } = useAuth()
+
+  const visible = NAV_ITEMS.filter(
+    (item) => !item.roles || item.roles.includes(user?.role),
+  )
+
   return (
     <>
       <div
@@ -33,7 +40,7 @@ function Sidebar({ open, onClose }) {
           <span className="sidebar-brand-name">BMMS</span>
         </div>
         <nav className="sidebar-nav" aria-label="Main">
-          {NAV_ITEMS.map((item) => (
+          {visible.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}
