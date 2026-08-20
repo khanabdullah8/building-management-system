@@ -32,6 +32,7 @@ describe('Complaints API (/api/v1/complaints)', () => {
     description: 'Large stray dog spotted near the security booth.',
     priority: 'low',
     status: 'open',
+    building: sampleBuilding._id.toString(),
   });
 
   beforeAll(async () => {

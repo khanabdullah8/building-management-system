@@ -4,6 +4,7 @@ const Unit = require('../models/Unit');
 const ApiError = require('../utils/ApiError');
 const { sendSuccess } = require('../utils/apiResponse');
 const asyncHandler = require('../utils/asyncHandler');
+const { isBuildingAllowed, unitScopeFilter } = require('../utils/scope');
 
 const residentPopulation = {
   path: 'unit',
@@ -16,7 +17,23 @@ const residentPopulation = {
 
 const getResidents = asyncHandler(async (req, res) => {
   const { search } = req.query;
+  const { buildingIds, unitId } = req.scope;
   const filter = {};
+
+  if (req.user.role === 'resident') {
+    if (unitId) {
+      filter.unit = new mongoose.Types.ObjectId(unitId);
+    } else {
+      filter._id = { $in: [] };
+    }
+  } else if (buildingIds !== null) {
+    const unitFilter = await unitScopeFilter(buildingIds);
+    if (unitFilter.unit && unitFilter.unit.$in && unitFilter.unit.$in.length === 0) {
+      filter._id = { $in: [] };
+    } else {
+      Object.assign(filter, unitFilter);
+    }
+  }
 
   if (search) {
     const escaped = search.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -46,6 +63,21 @@ const getResidentById = asyncHandler(async (req, res) => {
     throw new ApiError(404, 'Resident not found');
   }
 
+  const { buildingIds, unitId } = req.scope;
+  if (req.user.role === 'resident') {
+    if (unitId && resident.unit && resident.unit._id.toString() === unitId) {
+      return sendSuccess(res, resident);
+    }
+    throw new ApiError(403, 'Forbidden: insufficient permissions');
+  } else if (buildingIds !== null) {
+    if (resident.unit && resident.unit.building) {
+      const buildingRef = resident.unit.building._id || resident.unit.building;
+      if (!isBuildingAllowed(buildingIds, buildingRef.toString())) {
+        throw new ApiError(403, 'Forbidden: insufficient permissions');
+      }
+    }
+  }
+
   return sendSuccess(res, resident);
 });
 
@@ -58,6 +90,7 @@ const validateUnit = async (unitId) => {
   if (!unit) {
     throw new ApiError(400, 'Referenced unit does not exist', { unit: 'Referenced unit does not exist' });
   }
+  return unit;
 };
 
 const createResident = asyncHandler(async (req, res) => {
@@ -71,7 +104,15 @@ const createResident = asyncHandler(async (req, res) => {
     throw new ApiError(400, 'Unit ID is required', { unit: 'Unit ID is required' });
   }
 
-  await validateUnit(unitId);
+  const unit = await validateUnit(unitId);
+
+  if (!isBuildingAllowed(req.scope.buildingIds, unit.building)) {
+    throw new ApiError(403, 'Forbidden: insufficient permissions');
+  }
+
+  if (req.user.role === 'resident' && req.scope.unitId && unit._id.toString() !== req.scope.unitId) {
+    throw new ApiError(403, 'Forbidden: cannot access resources outside your unit');
+  }
 
   if (phone !== undefined && typeof phone !== 'string') {
     throw new ApiError(400, 'Phone must be a string', { phone: 'Phone must be a string' });
@@ -109,6 +150,11 @@ const updateResident = asyncHandler(async (req, res) => {
     throw new ApiError(404, 'Resident not found');
   }
 
+  const existingUnit = await Unit.findById(resident.unit).select('building').lean();
+  if (existingUnit && !isBuildingAllowed(req.scope.buildingIds, existingUnit.building)) {
+    throw new ApiError(403, 'Forbidden: insufficient permissions');
+  }
+
   const { name, unit: unitId, phone, type, status } = req.body;
 
   if (name !== undefined) {
@@ -119,7 +165,13 @@ const updateResident = asyncHandler(async (req, res) => {
   }
 
   if (unitId !== undefined) {
-    await validateUnit(unitId);
+    const unit = await validateUnit(unitId);
+    if (!isBuildingAllowed(req.scope.buildingIds, unit.building)) {
+      throw new ApiError(403, 'Forbidden: cannot assign to unit outside your scope');
+    }
+    if (req.user.role === 'resident' && req.scope.unitId && unit._id.toString() !== req.scope.unitId) {
+      throw new ApiError(403, 'Forbidden: cannot assign to unit outside your unit');
+    }
     resident.unit = unitId;
   }
 
@@ -156,10 +208,17 @@ const deleteResident = asyncHandler(async (req, res) => {
     throw new ApiError(404, 'Resident not found');
   }
 
-  const resident = await Resident.findByIdAndDelete(id);
+  const resident = await Resident.findById(id);
   if (!resident) {
     throw new ApiError(404, 'Resident not found');
   }
+
+  const existingUnit = await Unit.findById(resident.unit).select('building').lean();
+  if (existingUnit && !isBuildingAllowed(req.scope.buildingIds, existingUnit.building)) {
+    throw new ApiError(403, 'Forbidden: insufficient permissions');
+  }
+
+  await Resident.findByIdAndDelete(id);
 
   return sendSuccess(res, null, 'Resident deleted successfully');
 });

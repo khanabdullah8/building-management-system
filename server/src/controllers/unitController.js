@@ -4,10 +4,19 @@ const Building = require('../models/Building');
 const ApiError = require('../utils/ApiError');
 const { sendSuccess } = require('../utils/apiResponse');
 const asyncHandler = require('../utils/asyncHandler');
+const { isBuildingAllowed } = require('../utils/scope');
 
 const getUnits = asyncHandler(async (req, res) => {
   const { search, status, building } = req.query;
+  const { buildingIds } = req.scope;
   const filter = {};
+
+  if (buildingIds !== null) {
+    if (!buildingIds || buildingIds.length === 0) {
+      return sendSuccess(res, []);
+    }
+    filter.building = { $in: buildingIds.map((id) => new mongoose.Types.ObjectId(id)) };
+  }
 
   if (status) {
     filter.status = status;
@@ -15,6 +24,9 @@ const getUnits = asyncHandler(async (req, res) => {
 
   if (building) {
     if (mongoose.Types.ObjectId.isValid(building)) {
+      if (buildingIds !== null && !isBuildingAllowed(buildingIds, building)) {
+        return sendSuccess(res, []);
+      }
       filter.building = building;
     }
   }
@@ -47,6 +59,10 @@ const getUnitById = asyncHandler(async (req, res) => {
     throw new ApiError(404, 'Unit not found');
   }
 
+  if (!isBuildingAllowed(req.scope.buildingIds, unit.building._id || unit.building)) {
+    throw new ApiError(403, 'Forbidden: insufficient permissions');
+  }
+
   return sendSuccess(res, unit);
 });
 
@@ -68,6 +84,10 @@ const createUnit = asyncHandler(async (req, res) => {
   const buildingDoc = await Building.findById(buildingId);
   if (!buildingDoc) {
     throw new ApiError(400, 'Referenced building does not exist', { building: 'Referenced building does not exist' });
+  }
+
+  if (!isBuildingAllowed(req.scope.buildingIds, buildingId)) {
+    throw new ApiError(403, 'Forbidden: insufficient permissions');
   }
 
   if (floor !== undefined && typeof floor !== 'number') {
@@ -113,6 +133,10 @@ const updateUnit = asyncHandler(async (req, res) => {
     throw new ApiError(404, 'Unit not found');
   }
 
+  if (!isBuildingAllowed(req.scope.buildingIds, unit.building)) {
+    throw new ApiError(403, 'Forbidden: insufficient permissions');
+  }
+
   const { unitNumber, building: newBuildingId, type, floor, status } = req.body;
   const oldBuildingId = unit.building.toString();
 
@@ -130,6 +154,9 @@ const updateUnit = asyncHandler(async (req, res) => {
     const newBuildingDoc = await Building.findById(newBuildingId);
     if (!newBuildingDoc) {
       throw new ApiError(400, 'Referenced building does not exist', { building: 'Referenced building does not exist' });
+    }
+    if (!isBuildingAllowed(req.scope.buildingIds, newBuildingId)) {
+      throw new ApiError(403, 'Forbidden: insufficient permissions');
     }
     unit.building = newBuildingId;
   }
@@ -179,11 +206,16 @@ const deleteUnit = asyncHandler(async (req, res) => {
     throw new ApiError(404, 'Unit not found');
   }
 
-  const unit = await Unit.findByIdAndDelete(id);
-
+  const unit = await Unit.findById(id);
   if (!unit) {
     throw new ApiError(404, 'Unit not found');
   }
+
+  if (!isBuildingAllowed(req.scope.buildingIds, unit.building)) {
+    throw new ApiError(403, 'Forbidden: insufficient permissions');
+  }
+
+  await Unit.findByIdAndDelete(id);
 
   await Building.findByIdAndUpdate(unit.building, { $inc: { units: -1 } });
 

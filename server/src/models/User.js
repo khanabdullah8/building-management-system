@@ -41,6 +41,12 @@ const userSchema = new mongoose.Schema(
       ref: 'Resident',
       default: null,
     },
+    buildings: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Building',
+      },
+    ],
   },
   {
     timestamps: true,
@@ -68,6 +74,7 @@ const userSchema = new mongoose.Schema(
 );
 
 userSchema.index({ status: 1 });
+userSchema.index({ buildings: 1 });
 
 userSchema.pre('save', async function hashPassword() {
   if (!this.isModified('password')) return;

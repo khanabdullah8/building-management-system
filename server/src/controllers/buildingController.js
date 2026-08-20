@@ -3,10 +3,19 @@ const Building = require('../models/Building');
 const ApiError = require('../utils/ApiError');
 const { sendSuccess } = require('../utils/apiResponse');
 const asyncHandler = require('../utils/asyncHandler');
+const { hasGlobalAccess, isBuildingAllowed } = require('../utils/scope');
 
 const getBuildings = asyncHandler(async (req, res) => {
   const { search, status } = req.query;
+  const { buildingIds } = req.scope;
   const filter = {};
+
+  if (buildingIds !== null) {
+    if (!buildingIds || buildingIds.length === 0) {
+      return sendSuccess(res, []);
+    }
+    filter._id = { $in: buildingIds.map((id) => new mongoose.Types.ObjectId(id)) };
+  }
 
   if (status) {
     filter.status = status;
@@ -39,10 +48,18 @@ const getBuildingById = asyncHandler(async (req, res) => {
     throw new ApiError(404, 'Building not found');
   }
 
+  if (!isBuildingAllowed(req.scope.buildingIds, building._id)) {
+    throw new ApiError(403, 'Forbidden: insufficient permissions');
+  }
+
   return sendSuccess(res, building);
 });
 
 const createBuilding = asyncHandler(async (req, res) => {
+  if (!hasGlobalAccess(req.scope.buildingIds)) {
+    throw new ApiError(403, 'Forbidden: only admins can create buildings');
+  }
+
   const { code, name, address, units, status } = req.body;
 
   if (!code || typeof code !== 'string' || !code.trim()) {
@@ -93,6 +110,10 @@ const updateBuilding = asyncHandler(async (req, res) => {
     throw new ApiError(404, 'Building not found');
   }
 
+  if (!isBuildingAllowed(req.scope.buildingIds, building._id)) {
+    throw new ApiError(403, 'Forbidden: insufficient permissions');
+  }
+
   const { code, name, address, units, status } = req.body;
 
   if (code !== undefined) {
@@ -141,6 +162,10 @@ const updateBuilding = asyncHandler(async (req, res) => {
 });
 
 const deleteBuilding = asyncHandler(async (req, res) => {
+  if (!hasGlobalAccess(req.scope.buildingIds)) {
+    throw new ApiError(403, 'Forbidden: only admins can delete buildings');
+  }
+
   const { id } = req.params;
 
   if (!mongoose.Types.ObjectId.isValid(id)) {

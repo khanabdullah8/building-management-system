@@ -5,6 +5,7 @@ const Payment = require('../models/Payment');
 const ApiError = require('../utils/ApiError');
 const { sendSuccess } = require('../utils/apiResponse');
 const asyncHandler = require('../utils/asyncHandler');
+const { isBuildingAllowed, unitScopeFilter } = require('../utils/scope');
 
 const billPopulation = {
   path: 'unit',
@@ -22,6 +23,7 @@ const validateUnit = async (unitId) => {
   if (!unit) {
     throw new ApiError(400, 'Referenced unit does not exist', { unit: 'Referenced unit does not exist' });
   }
+  return unit;
 };
 
 const managePaidAt = (bill, newStatus) => {
@@ -36,10 +38,29 @@ const managePaidAt = (bill, newStatus) => {
 
 const getBills = asyncHandler(async (req, res) => {
   const { search, building, status } = req.query;
+  const { buildingIds, unitId } = req.scope;
   const filter = {};
 
-  if (building) {
+  if (req.user.role === 'resident') {
+    if (unitId) {
+      filter.unit = new mongoose.Types.ObjectId(unitId);
+    } else {
+      filter._id = { $in: [] };
+    }
+  } else if (buildingIds !== null) {
+    const sf = await unitScopeFilter(buildingIds);
+    if (sf.unit && sf.unit.$in && sf.unit.$in.length === 0) {
+      filter._id = { $in: [] };
+    } else {
+      Object.assign(filter, sf);
+    }
+  }
+
+  if (building && req.user.role !== 'resident') {
     if (!mongoose.Types.ObjectId.isValid(building)) {
+      return sendSuccess(res, []);
+    }
+    if (buildingIds !== null && !isBuildingAllowed(buildingIds, building)) {
       return sendSuccess(res, []);
     }
     const unitIds = await Unit.find({ building }).select('_id');
@@ -84,6 +105,21 @@ const getBillById = asyncHandler(async (req, res) => {
     throw new ApiError(404, 'Bill not found');
   }
 
+  const { buildingIds, unitId: scopeUnitId } = req.scope;
+  if (req.user.role === 'resident') {
+    if (scopeUnitId && bill.unit && bill.unit._id.toString() === scopeUnitId) {
+      return sendSuccess(res, bill);
+    }
+    throw new ApiError(403, 'Forbidden: insufficient permissions');
+  } else if (buildingIds !== null) {
+    if (bill.unit && bill.unit.building) {
+      const buildingRef = bill.unit.building._id || bill.unit.building;
+      if (!isBuildingAllowed(buildingIds, buildingRef.toString())) {
+        throw new ApiError(403, 'Forbidden: insufficient permissions');
+      }
+    }
+  }
+
   return sendSuccess(res, bill);
 });
 
@@ -94,7 +130,15 @@ const createBill = asyncHandler(async (req, res) => {
     throw new ApiError(400, 'Unit ID is required', { unit: 'Unit ID is required' });
   }
 
-  await validateUnit(unitId);
+  const unit = await validateUnit(unitId);
+
+  if (!isBuildingAllowed(req.scope.buildingIds, unit.building)) {
+    throw new ApiError(403, 'Forbidden: insufficient permissions');
+  }
+
+  if (req.user.role === 'resident' && req.scope.unitId && unit._id.toString() !== req.scope.unitId) {
+    throw new ApiError(403, 'Forbidden: cannot access resources outside your unit');
+  }
 
   if (!period || typeof period !== 'string' || !period.trim()) {
     throw new ApiError(400, 'Billing period is required', { period: 'Billing period is required' });
@@ -166,6 +210,18 @@ const updateBill = asyncHandler(async (req, res) => {
     throw new ApiError(404, 'Bill not found');
   }
 
+  const { buildingIds, unitId: scopeUnitId } = req.scope;
+  if (req.user.role === 'resident') {
+    if (!scopeUnitId || !bill.unit || bill.unit.toString() !== scopeUnitId) {
+      throw new ApiError(403, 'Forbidden: insufficient permissions');
+    }
+  } else if (buildingIds !== null) {
+    const billUnit = await Unit.findById(bill.unit).select('building').lean();
+    if (!billUnit || !isBuildingAllowed(buildingIds, billUnit.building)) {
+      throw new ApiError(403, 'Forbidden: insufficient permissions');
+    }
+  }
+
   const { billNo, unit, period, amount, description, status, dueDate } = req.body;
 
   if (billNo !== undefined) {
@@ -232,15 +288,29 @@ const deleteBill = asyncHandler(async (req, res) => {
     throw new ApiError(404, 'Bill not found');
   }
 
+  const bill = await Bill.findById(id);
+  if (!bill) {
+    throw new ApiError(404, 'Bill not found');
+  }
+
+  const { buildingIds, unitId: scopeUnitId } = req.scope;
+  if (req.user.role === 'resident') {
+    if (!scopeUnitId || !bill.unit || bill.unit.toString() !== scopeUnitId) {
+      throw new ApiError(403, 'Forbidden: insufficient permissions');
+    }
+  } else if (buildingIds !== null) {
+    const billUnit = await Unit.findById(bill.unit).select('building').lean();
+    if (!billUnit || !isBuildingAllowed(buildingIds, billUnit.building)) {
+      throw new ApiError(403, 'Forbidden: insufficient permissions');
+    }
+  }
+
   const existingPayment = await Payment.findOne({ bill: id }).select('_id').lean();
   if (existingPayment) {
     throw new ApiError(400, 'Cannot delete bill with existing payments');
   }
 
-  const bill = await Bill.findByIdAndDelete(id);
-  if (!bill) {
-    throw new ApiError(404, 'Bill not found');
-  }
+  await Bill.findByIdAndDelete(id);
 
   return sendSuccess(res, null, 'Bill deleted successfully');
 });

@@ -4,6 +4,7 @@ const Unit = require('../models/Unit');
 const ApiError = require('../utils/ApiError');
 const { sendSuccess } = require('../utils/apiResponse');
 const asyncHandler = require('../utils/asyncHandler');
+const { isBuildingAllowed, unitScopeFilter } = require('../utils/scope');
 
 const maintenancePopulation = {
   path: 'unit',
@@ -16,7 +17,23 @@ const maintenancePopulation = {
 
 const getMaintenanceRequests = asyncHandler(async (req, res) => {
   const { search } = req.query;
+  const { buildingIds, unitId } = req.scope;
   const filter = {};
+
+  if (req.user.role === 'resident') {
+    if (unitId) {
+      filter.unit = new mongoose.Types.ObjectId(unitId);
+    } else {
+      filter._id = { $in: [] };
+    }
+  } else if (buildingIds !== null) {
+    const unitFilter = await unitScopeFilter(buildingIds);
+    if (unitFilter.unit && unitFilter.unit.$in && unitFilter.unit.$in.length === 0) {
+      filter._id = { $in: [] };
+    } else {
+      Object.assign(filter, unitFilter);
+    }
+  }
 
   if (search) {
     const escaped = search.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -45,6 +62,21 @@ const getMaintenanceRequestById = asyncHandler(async (req, res) => {
     throw new ApiError(404, 'Maintenance request not found');
   }
 
+  const { buildingIds, unitId } = req.scope;
+  if (req.user.role === 'resident') {
+    if (unitId && request.unit && request.unit._id.toString() === unitId) {
+      return sendSuccess(res, request);
+    }
+    throw new ApiError(403, 'Forbidden: insufficient permissions');
+  } else if (buildingIds !== null) {
+    if (request.unit && request.unit.building) {
+      const buildingRef = request.unit.building._id || request.unit.building;
+      if (!isBuildingAllowed(buildingIds, buildingRef.toString())) {
+        throw new ApiError(403, 'Forbidden: insufficient permissions');
+      }
+    }
+  }
+
   return sendSuccess(res, request);
 });
 
@@ -57,6 +89,7 @@ const validateUnit = async (unitId) => {
   if (!unit) {
     throw new ApiError(400, 'Referenced unit does not exist', { unit: 'Referenced unit does not exist' });
   }
+  return unit;
 };
 
 const createMaintenanceRequest = asyncHandler(async (req, res) => {
@@ -70,7 +103,15 @@ const createMaintenanceRequest = asyncHandler(async (req, res) => {
     throw new ApiError(400, 'Unit ID is required', { unit: 'Unit ID is required' });
   }
 
-  await validateUnit(unitId);
+  const unit = await validateUnit(unitId);
+
+  if (!isBuildingAllowed(req.scope.buildingIds, unit.building)) {
+    throw new ApiError(403, 'Forbidden: insufficient permissions');
+  }
+
+  if (req.user.role === 'resident' && req.scope.unitId && unit._id.toString() !== req.scope.unitId) {
+    throw new ApiError(403, 'Forbidden: cannot access resources outside your unit');
+  }
 
   if (!['low', 'medium', 'high'].includes(priority)) {
     throw new ApiError(400, 'Priority must be low, medium, or high', { priority: 'Priority must be low, medium, or high' });
@@ -113,7 +154,19 @@ const updateMaintenanceRequest = asyncHandler(async (req, res) => {
     throw new ApiError(404, 'Maintenance request not found');
   }
 
-  const { title, unit: unitId, description, priority, assignedTo, status } = req.body;
+  const { buildingIds, unitId } = req.scope;
+  const existingUnit = await Unit.findById(maintenance.unit).select('building').lean();
+  if (req.user.role === 'resident') {
+    if (!unitId || !existingUnit || existingUnit._id.toString() !== unitId) {
+      throw new ApiError(403, 'Forbidden: insufficient permissions');
+    }
+  } else if (buildingIds !== null) {
+    if (existingUnit && !isBuildingAllowed(buildingIds, existingUnit.building)) {
+      throw new ApiError(403, 'Forbidden: insufficient permissions');
+    }
+  }
+
+  const { title, unit: unitIdBody, description, priority, assignedTo, status } = req.body;
 
   if (title !== undefined) {
     if (typeof title !== 'string' || !title.trim()) {
@@ -122,9 +175,15 @@ const updateMaintenanceRequest = asyncHandler(async (req, res) => {
     maintenance.title = title.trim();
   }
 
-  if (unitId !== undefined) {
-    await validateUnit(unitId);
-    maintenance.unit = unitId;
+  if (unitIdBody !== undefined) {
+    const unit = await validateUnit(unitIdBody);
+    if (!isBuildingAllowed(req.scope.buildingIds, unit.building)) {
+      throw new ApiError(403, 'Forbidden: cannot assign to unit outside your scope');
+    }
+    if (req.user.role === 'resident' && req.scope.unitId && unit._id.toString() !== req.scope.unitId) {
+      throw new ApiError(403, 'Forbidden: cannot assign to unit outside your unit');
+    }
+    maintenance.unit = unitIdBody;
   }
 
   if (description !== undefined) {
@@ -167,10 +226,20 @@ const deleteMaintenanceRequest = asyncHandler(async (req, res) => {
     throw new ApiError(404, 'Maintenance request not found');
   }
 
-  const maintenance = await Maintenance.findByIdAndDelete(id);
+  const maintenance = await Maintenance.findById(id);
   if (!maintenance) {
     throw new ApiError(404, 'Maintenance request not found');
   }
+
+  const { buildingIds } = req.scope;
+  if (buildingIds !== null) {
+    const existingUnit = await Unit.findById(maintenance.unit).select('building').lean();
+    if (existingUnit && !isBuildingAllowed(buildingIds, existingUnit.building)) {
+      throw new ApiError(403, 'Forbidden: insufficient permissions');
+    }
+  }
+
+  await Maintenance.findByIdAndDelete(id);
 
   return sendSuccess(res, null, 'Maintenance request deleted successfully');
 });

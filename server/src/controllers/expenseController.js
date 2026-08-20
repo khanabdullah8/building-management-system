@@ -4,6 +4,7 @@ const Building = require('../models/Building');
 const ApiError = require('../utils/ApiError');
 const { sendSuccess } = require('../utils/apiResponse');
 const asyncHandler = require('../utils/asyncHandler');
+const { hasGlobalAccess, isBuildingAllowed } = require('../utils/scope');
 
 const expensePopulation = { path: 'building', select: 'name code' };
 
@@ -19,14 +20,26 @@ const validateBuilding = async (buildingId) => {
   if (!building) {
     throw new ApiError(400, 'Referenced building does not exist', { building: 'Referenced building does not exist' });
   }
+  return building;
 };
 
 const getExpenses = asyncHandler(async (req, res) => {
   const { search, building, status, category } = req.query;
+  const { buildingIds } = req.scope;
   const filter = {};
+
+  if (buildingIds === null) {
+  } else if (!buildingIds || buildingIds.length === 0) {
+    return sendSuccess(res, []);
+  } else {
+    filter.building = { $in: buildingIds.map((id) => new mongoose.Types.ObjectId(id)) };
+  }
 
   if (building) {
     if (!mongoose.Types.ObjectId.isValid(building)) {
+      return sendSuccess(res, []);
+    }
+    if (!isBuildingAllowed(req.scope.buildingIds, building)) {
       return sendSuccess(res, []);
     }
     filter.building = building;
@@ -76,6 +89,10 @@ const getExpenseById = asyncHandler(async (req, res) => {
     throw new ApiError(404, 'Expense not found');
   }
 
+  if (!isBuildingAllowed(req.scope.buildingIds, expense.building._id || expense.building)) {
+    throw new ApiError(403, 'Forbidden: insufficient permissions');
+  }
+
   return sendSuccess(res, expense);
 });
 
@@ -96,7 +113,11 @@ const createExpense = asyncHandler(async (req, res) => {
     throw new ApiError(400, 'Building ID is required', { building: 'Building ID is required' });
   }
 
-  await validateBuilding(buildingId);
+  const building = await validateBuilding(buildingId);
+
+  if (!isBuildingAllowed(req.scope.buildingIds, buildingId)) {
+    throw new ApiError(403, 'Forbidden: insufficient permissions');
+  }
 
   if (amount === undefined || amount === null) {
     throw new ApiError(400, 'Amount is required', { amount: 'Amount is required' });
@@ -150,6 +171,10 @@ const updateExpense = asyncHandler(async (req, res) => {
   const expense = await Expense.findById(id);
   if (!expense) {
     throw new ApiError(404, 'Expense not found');
+  }
+
+  if (!isBuildingAllowed(req.scope.buildingIds, expense.building)) {
+    throw new ApiError(403, 'Forbidden: insufficient permissions');
   }
 
   const { category, description, amount, date, status } = req.body;
@@ -210,10 +235,16 @@ const deleteExpense = asyncHandler(async (req, res) => {
     throw new ApiError(404, 'Expense not found');
   }
 
-  const expense = await Expense.findByIdAndDelete(id);
+  const expense = await Expense.findById(id);
   if (!expense) {
     throw new ApiError(404, 'Expense not found');
   }
+
+  if (!isBuildingAllowed(req.scope.buildingIds, expense.building)) {
+    throw new ApiError(403, 'Forbidden: insufficient permissions');
+  }
+
+  await Expense.findByIdAndDelete(id);
 
   return sendSuccess(res, null, 'Expense deleted successfully');
 });

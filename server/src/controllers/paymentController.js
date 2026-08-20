@@ -5,6 +5,7 @@ const Unit = require('../models/Unit');
 const ApiError = require('../utils/ApiError');
 const { sendSuccess } = require('../utils/apiResponse');
 const asyncHandler = require('../utils/asyncHandler');
+const { isBuildingAllowed, unitScopeFilter } = require('../utils/scope');
 
 const paymentPopulation = {
   path: 'bill',
@@ -51,6 +52,7 @@ const validateBill = async (billId) => {
   if (!bill) {
     throw new ApiError(400, 'Referenced bill does not exist', { bill: 'Referenced bill does not exist' });
   }
+  return bill;
 };
 
 const generateUniquePaymentNo = async () => {
@@ -72,17 +74,44 @@ const generateUniquePaymentNo = async () => {
 
 const getPayments = asyncHandler(async (req, res) => {
   const { search, bill, building, status, method, dateFrom, dateTo } = req.query;
+  const { buildingIds, unitId } = req.scope;
   const filter = {};
+
+  if (req.user.role === 'resident') {
+    if (unitId) {
+      const billIds = await Bill.find({ unit: new mongoose.Types.ObjectId(unitId) }).select('_id');
+      if (billIds.length === 0) return sendSuccess(res, []);
+      filter.bill = { $in: billIds.map((b) => b._id) };
+    } else {
+      filter._id = { $in: [] };
+    }
+  } else if (buildingIds !== null) {
+    const sf = await unitScopeFilter(buildingIds);
+    if (sf.unit && sf.unit.$in && sf.unit.$in.length === 0) {
+      filter._id = { $in: [] };
+    } else if (Object.keys(sf).length > 0) {
+      const billIds = await Bill.find({ unit: sf.unit }).select('_id');
+      if (billIds.length === 0) return sendSuccess(res, []);
+      filter.bill = { $in: billIds.map((b) => b._id) };
+    }
+  }
 
   if (bill) {
     if (!mongoose.Types.ObjectId.isValid(bill)) {
       return sendSuccess(res, []);
     }
-    filter.bill = bill;
+    if (filter.bill && filter.bill.$in) {
+      filter.bill = { $in: [...filter.bill.$in, new mongoose.Types.ObjectId(bill)] };
+    } else {
+      filter.bill = bill;
+    }
   }
 
-  if (building) {
+  if (building && req.user.role !== 'resident') {
     if (!mongoose.Types.ObjectId.isValid(building)) {
+      return sendSuccess(res, []);
+    }
+    if (buildingIds !== null && !isBuildingAllowed(buildingIds, building)) {
       return sendSuccess(res, []);
     }
     const unitIds = await Unit.find({ building }).select('_id');
@@ -153,6 +182,21 @@ const getPaymentById = asyncHandler(async (req, res) => {
     throw new ApiError(404, 'Payment not found');
   }
 
+  const { buildingIds, unitId: scopeUnitId } = req.scope;
+  if (req.user.role === 'resident') {
+    if (scopeUnitId && payment.bill && payment.bill.unit && payment.bill.unit._id.toString() === scopeUnitId) {
+      return sendSuccess(res, payment);
+    }
+    throw new ApiError(403, 'Forbidden: insufficient permissions');
+  } else if (buildingIds !== null) {
+    if (payment.bill && payment.bill.unit && payment.bill.unit.building) {
+      const buildingRef = payment.bill.unit.building._id || payment.bill.unit.building;
+      if (!isBuildingAllowed(buildingIds, buildingRef.toString())) {
+        throw new ApiError(403, 'Forbidden: insufficient permissions');
+      }
+    }
+  }
+
   return sendSuccess(res, payment);
 });
 
@@ -163,7 +207,18 @@ const createPayment = asyncHandler(async (req, res) => {
     throw new ApiError(400, 'Bill ID is required', { bill: 'Bill ID is required' });
   }
 
-  await validateBill(billId);
+  const bill = await validateBill(billId);
+
+  if (req.user.role === 'resident') {
+    if (!req.scope.unitId || !bill.unit || bill.unit.toString() !== req.scope.unitId) {
+      throw new ApiError(403, 'Forbidden: insufficient permissions');
+    }
+  } else if (!isBuildingAllowed(req.scope.buildingIds, null)) {
+    const billUnit = await Unit.findById(bill.unit).select('building').lean();
+    if (!billUnit || !isBuildingAllowed(req.scope.buildingIds, billUnit.building)) {
+      throw new ApiError(403, 'Forbidden: insufficient permissions');
+    }
+  }
 
   if (amount === undefined || amount === null) {
     throw new ApiError(400, 'Amount is required', { amount: 'Amount is required' });
@@ -249,6 +304,25 @@ const updatePayment = asyncHandler(async (req, res) => {
     throw new ApiError(404, 'Payment not found');
   }
 
+  const { buildingIds, unitId: scopeUnitId } = req.scope;
+  if (req.user.role === 'resident') {
+    if (!scopeUnitId) {
+      throw new ApiError(403, 'Forbidden: insufficient permissions');
+    }
+    const billDoc = await Bill.findById(payment.bill).select('unit').lean();
+    if (!billDoc || billDoc.unit.toString() !== scopeUnitId) {
+      throw new ApiError(403, 'Forbidden: insufficient permissions');
+    }
+  } else if (buildingIds !== null) {
+    const billDoc = await Bill.findById(payment.bill).select('unit').lean();
+    if (billDoc) {
+      const billUnit = await Unit.findById(billDoc.unit).select('building').lean();
+      if (!billUnit || !isBuildingAllowed(buildingIds, billUnit.building)) {
+        throw new ApiError(403, 'Forbidden: insufficient permissions');
+      }
+    }
+  }
+
   const { paymentNo, bill, amount, method, status, reference, notes } = req.body;
 
   if (paymentNo !== undefined) {
@@ -302,10 +376,6 @@ const updatePayment = asyncHandler(async (req, res) => {
     payment.notes = notes.trim();
   }
 
-  const statusChanged =
-    (status !== undefined && status !== payment.status) ||
-    (status !== undefined);
-
   await payment.save();
   await recalculateBillStatus(payment.bill);
   await payment.populate(paymentPopulation);
@@ -322,6 +392,25 @@ const deletePayment = asyncHandler(async (req, res) => {
   const payment = await Payment.findById(id);
   if (!payment) {
     throw new ApiError(404, 'Payment not found');
+  }
+
+  const { buildingIds, unitId: scopeUnitId } = req.scope;
+  if (req.user.role === 'resident') {
+    if (!scopeUnitId) {
+      throw new ApiError(403, 'Forbidden: insufficient permissions');
+    }
+    const billDoc = await Bill.findById(payment.bill).select('unit').lean();
+    if (!billDoc || billDoc.unit.toString() !== scopeUnitId) {
+      throw new ApiError(403, 'Forbidden: insufficient permissions');
+    }
+  } else if (buildingIds !== null) {
+    const billDoc = await Bill.findById(payment.bill).select('unit').lean();
+    if (billDoc) {
+      const billUnit = await Unit.findById(billDoc.unit).select('building').lean();
+      if (!billUnit || !isBuildingAllowed(buildingIds, billUnit.building)) {
+        throw new ApiError(403, 'Forbidden: insufficient permissions');
+      }
+    }
   }
 
   const billId = payment.bill;

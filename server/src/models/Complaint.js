@@ -12,6 +12,11 @@ const complaintSchema = new mongoose.Schema(
       ref: 'Unit',
       default: null,
     },
+    building: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Building',
+      default: null,
+    },
     location: {
       type: String,
       trim: true,
@@ -63,6 +68,7 @@ const complaintSchema = new mongoose.Schema(
 );
 
 complaintSchema.index({ unit: 1 });
+complaintSchema.index({ building: 1 });
 complaintSchema.index({ status: 1 });
 
 const Complaint = mongoose.model('Complaint', complaintSchema);

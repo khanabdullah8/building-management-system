@@ -5,6 +5,7 @@ const Unit = require('../models/Unit');
 const ApiError = require('../utils/ApiError');
 const { sendSuccess } = require('../utils/apiResponse');
 const asyncHandler = require('../utils/asyncHandler');
+const { isBuildingAllowed } = require('../utils/scope');
 
 const buildingPopulation = { path: 'building', select: 'name code' };
 
@@ -26,6 +27,7 @@ const validateBuilding = async (buildingId) => {
   if (!building) {
     throw new ApiError(400, 'Referenced building does not exist', { building: 'Referenced building does not exist' });
   }
+  return building;
 };
 
 const validateUnitBelongsToBuilding = async (unitId, buildingId) => {
@@ -47,10 +49,21 @@ const validateUnitBelongsToBuilding = async (unitId, buildingId) => {
 
 const getParkingSlots = asyncHandler(async (req, res) => {
   const { search, building, unit } = req.query;
+  const { buildingIds } = req.scope;
   const filter = {};
+
+  if (buildingIds !== null) {
+    if (!buildingIds || buildingIds.length === 0) {
+      return sendSuccess(res, []);
+    }
+    filter.building = { $in: buildingIds.map((id) => new mongoose.Types.ObjectId(id)) };
+  }
 
   if (building) {
     if (!mongoose.Types.ObjectId.isValid(building)) {
+      return sendSuccess(res, []);
+    }
+    if (buildingIds !== null && !isBuildingAllowed(buildingIds, building)) {
       return sendSuccess(res, []);
     }
     filter.building = building;
@@ -99,6 +112,10 @@ const getParkingSlotById = asyncHandler(async (req, res) => {
     throw new ApiError(404, 'Parking slot not found');
   }
 
+  if (!isBuildingAllowed(req.scope.buildingIds, slot.building._id || slot.building)) {
+    throw new ApiError(403, 'Forbidden: insufficient permissions');
+  }
+
   return sendSuccess(res, slot);
 });
 
@@ -114,6 +131,10 @@ const createParkingSlot = asyncHandler(async (req, res) => {
   }
 
   await validateBuilding(buildingId);
+
+  if (!isBuildingAllowed(req.scope.buildingIds, buildingId)) {
+    throw new ApiError(403, 'Forbidden: insufficient permissions');
+  }
 
   if (unitId !== undefined && unitId !== null) {
     await validateUnitBelongsToBuilding(unitId, buildingId);
@@ -162,6 +183,10 @@ const updateParkingSlot = asyncHandler(async (req, res) => {
   const slot = await Parking.findById(id);
   if (!slot) {
     throw new ApiError(404, 'Parking slot not found');
+  }
+
+  if (!isBuildingAllowed(req.scope.buildingIds, slot.building)) {
+    throw new ApiError(403, 'Forbidden: insufficient permissions');
   }
 
   const { slotCode, unit: unitId, vehicleType, vehicleNumber } = req.body;
@@ -223,11 +248,16 @@ const deleteParkingSlot = asyncHandler(async (req, res) => {
     throw new ApiError(404, 'Parking slot not found');
   }
 
-  const slot = await Parking.findByIdAndDelete(id);
+  const slot = await Parking.findById(id);
   if (!slot) {
     throw new ApiError(404, 'Parking slot not found');
   }
 
+  if (!isBuildingAllowed(req.scope.buildingIds, slot.building)) {
+    throw new ApiError(403, 'Forbidden: insufficient permissions');
+  }
+
+  await Parking.findByIdAndDelete(id);
   return sendSuccess(res, null, 'Parking slot deleted successfully');
 });
 

@@ -4,6 +4,7 @@ const Building = require('../models/Building');
 const ApiError = require('../utils/ApiError');
 const { sendSuccess } = require('../utils/apiResponse');
 const asyncHandler = require('../utils/asyncHandler');
+const { hasGlobalAccess, isBuildingAllowed } = require('../utils/scope');
 
 const noticePopulation = {
   path: 'building',
@@ -19,10 +20,12 @@ const validateBuilding = async (buildingId) => {
   if (!building) {
     throw new ApiError(400, 'Referenced building does not exist', { building: 'Referenced building does not exist' });
   }
+  return building;
 };
 
 const getNotices = asyncHandler(async (req, res) => {
   const { search, building } = req.query;
+  const { buildingIds } = req.scope;
   const filter = {};
 
   if (search) {
@@ -38,7 +41,15 @@ const getNotices = asyncHandler(async (req, res) => {
     if (!mongoose.Types.ObjectId.isValid(building)) {
       return sendSuccess(res, []);
     }
+    if (buildingIds !== null && !isBuildingAllowed(buildingIds, building)) {
+      return sendSuccess(res, []);
+    }
     filter.building = building;
+  } else if (buildingIds !== null) {
+    filter.$or = [
+      { building: { $in: buildingIds.map((id) => new mongoose.Types.ObjectId(id)) } },
+      { building: null },
+    ];
   }
 
   const notices = await Notice.find(filter)
@@ -58,6 +69,10 @@ const getNoticeById = asyncHandler(async (req, res) => {
   const notice = await Notice.findById(id).populate(noticePopulation);
   if (!notice) {
     throw new ApiError(404, 'Notice not found');
+  }
+
+  if (notice.building && !isBuildingAllowed(req.scope.buildingIds, notice.building._id || notice.building)) {
+    throw new ApiError(403, 'Forbidden: insufficient permissions');
   }
 
   return sendSuccess(res, notice);
@@ -82,6 +97,11 @@ const createNotice = asyncHandler(async (req, res) => {
 
   if (buildingId !== undefined && buildingId !== null) {
     await validateBuilding(buildingId);
+    if (!isBuildingAllowed(req.scope.buildingIds, buildingId)) {
+      throw new ApiError(403, 'Forbidden: insufficient permissions');
+    }
+  } else if (!hasGlobalAccess(req.scope.buildingIds)) {
+    throw new ApiError(403, 'Forbidden: only admins can create global notices');
   }
 
   if (expiresAt !== undefined && expiresAt !== null) {
@@ -116,6 +136,10 @@ const updateNotice = asyncHandler(async (req, res) => {
     throw new ApiError(404, 'Notice not found');
   }
 
+  if (notice.building && !isBuildingAllowed(req.scope.buildingIds, notice.building)) {
+    throw new ApiError(403, 'Forbidden: insufficient permissions');
+  }
+
   const { title, category, description, building: buildingId, expiresAt } = req.body;
 
   if (title !== undefined) {
@@ -143,9 +167,15 @@ const updateNotice = asyncHandler(async (req, res) => {
 
   if (buildingId !== undefined) {
     if (buildingId === null) {
+      if (!hasGlobalAccess(req.scope.buildingIds)) {
+        throw new ApiError(403, 'Forbidden: only admins can create global notices');
+      }
       notice.building = null;
     } else {
       await validateBuilding(buildingId);
+      if (!isBuildingAllowed(req.scope.buildingIds, buildingId)) {
+        throw new ApiError(403, 'Forbidden: insufficient permissions');
+      }
       notice.building = buildingId;
     }
   }
@@ -174,11 +204,16 @@ const deleteNotice = asyncHandler(async (req, res) => {
     throw new ApiError(404, 'Notice not found');
   }
 
-  const notice = await Notice.findByIdAndDelete(id);
+  const notice = await Notice.findById(id);
   if (!notice) {
     throw new ApiError(404, 'Notice not found');
   }
 
+  if (notice.building && !isBuildingAllowed(req.scope.buildingIds, notice.building)) {
+    throw new ApiError(403, 'Forbidden: insufficient permissions');
+  }
+
+  await Notice.findByIdAndDelete(id);
   return sendSuccess(res, null, 'Notice deleted successfully');
 });
 

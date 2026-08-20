@@ -7,6 +7,7 @@ const morgan = require('morgan');
 const { NODE_ENV, ALLOWED_ORIGINS } = require('./config/env');
 const { createRateLimiter } = require('./middlewares/rateLimit');
 const { protect } = require('./middlewares/auth');
+const { loadBuildingScope } = require('./middlewares/buildingScope');
 const notFoundHandler = require('./middlewares/notFound');
 const errorHandler = require('./middlewares/error');
 
@@ -53,7 +54,7 @@ app.get('/api/health', (req, res) => {
 
 app.use('/api/v1/auth', authRoutes);
 
-app.use('/api/v1', protect);
+app.use('/api/v1', protect, loadBuildingScope);
 
 app.use('/api/v1/users', userRoutes);
 app.use('/api/v1/buildings', buildingRoutes);
