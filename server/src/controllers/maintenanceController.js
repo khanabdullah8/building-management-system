@@ -5,6 +5,10 @@ const ApiError = require('../utils/ApiError');
 const { sendSuccess } = require('../utils/apiResponse');
 const asyncHandler = require('../utils/asyncHandler');
 const { isBuildingAllowed, unitScopeFilter } = require('../utils/scope');
+const {
+  notifyMaintenanceCreated,
+  notifyMaintenanceStatusChanged,
+} = require('../services/notificationService');
 
 const maintenancePopulation = {
   path: 'unit',
@@ -138,6 +142,19 @@ const createMaintenanceRequest = asyncHandler(async (req, res) => {
     status,
   });
 
+  // Fan-out must never break the primary operation (no transactions in this
+  // codebase), so notification failures are logged and swallowed.
+  try {
+    await notifyMaintenanceCreated({
+      maintenanceId: maintenance._id,
+      title: maintenance.title,
+      unitBuildingId: unit.building,
+      actorId: req.user.id,
+    });
+  } catch (err) {
+    console.error('Notification fan-out failed:', err.message);
+  }
+
   await maintenance.populate(maintenancePopulation);
   return sendSuccess(res, maintenance, 'Maintenance request created successfully', null, 201);
 });
@@ -167,6 +184,9 @@ const updateMaintenanceRequest = asyncHandler(async (req, res) => {
   }
 
   const { title, unit: unitIdBody, description, priority, assignedTo, status } = req.body;
+
+  // Snapshot for status-change detection (notification fan-out).
+  const previousStatus = maintenance.status;
 
   if (title !== undefined) {
     if (typeof title !== 'string' || !title.trim()) {
@@ -215,6 +235,23 @@ const updateMaintenanceRequest = asyncHandler(async (req, res) => {
   }
 
   const updatedMaintenance = await maintenance.save();
+
+  if (status !== undefined && status !== previousStatus) {
+    // Fan-out must never break the primary operation (no transactions in
+    // this codebase), so notification failures are logged and swallowed.
+    try {
+      await notifyMaintenanceStatusChanged({
+        maintenanceId: updatedMaintenance._id,
+        title: updatedMaintenance.title,
+        unitId: updatedMaintenance.unit,
+        unitBuildingId: existingUnit ? existingUnit.building : null,
+        actorId: req.user.id,
+      });
+    } catch (err) {
+      console.error('Notification fan-out failed:', err.message);
+    }
+  }
+
   await updatedMaintenance.populate(maintenancePopulation);
   return sendSuccess(res, updatedMaintenance, 'Maintenance request updated successfully');
 });

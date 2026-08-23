@@ -5,6 +5,7 @@ const ApiError = require('../utils/ApiError');
 const { sendSuccess } = require('../utils/apiResponse');
 const asyncHandler = require('../utils/asyncHandler');
 const { hasGlobalAccess, isBuildingAllowed } = require('../utils/scope');
+const { notifyNoticeCreated } = require('../services/notificationService');
 
 const noticePopulation = {
   path: 'building',
@@ -121,6 +122,21 @@ const createNotice = asyncHandler(async (req, res) => {
 
   const notice = await Notice.create(noticeData);
   await notice.populate(noticePopulation);
+
+  // Fan-out must never break the primary operation (no transactions in this
+  // codebase), so notification failures are logged and swallowed.
+  // Pass the raw building ref (noticeData), not the populated document.
+  try {
+    await notifyNoticeCreated({
+      noticeId: notice._id,
+      title: notice.title,
+      buildingId: noticeData.building,
+      actorId: req.user.id,
+    });
+  } catch (err) {
+    console.error('Notification fan-out failed:', err.message);
+  }
+
   return sendSuccess(res, notice, 'Notice created successfully', null, 201);
 });
 
