@@ -20,8 +20,24 @@ const units = [
 ]
 
 const residents = [
-  { id: 'resident-1', name: 'Rahul Sharma', unit: units[0], phone: '+91 98123 45670', type: 'owner', status: 'active' },
-  { id: 'resident-2', name: 'Priya Menon', unit: units[1], phone: '', type: 'tenant', status: 'inactive' },
+  {
+    id: 'resident-1',
+    name: 'Rahul Sharma',
+    unit: units[0],
+    phone: '+91 98123 45670',
+    type: 'owner',
+    status: 'active',
+    account: { linked: true, userEmail: 'rahul@bmms.test' },
+  },
+  {
+    id: 'resident-2',
+    name: 'Priya Menon',
+    unit: units[1],
+    phone: '',
+    type: 'tenant',
+    status: 'inactive',
+    account: { linked: false, userEmail: null },
+  },
 ]
 
 function renderPage() {
@@ -65,6 +81,17 @@ describe('ResidentsPage CRUD functionality', () => {
     expect(screen.getByText('A-1101')).toBeInTheDocument()
     expect(screen.getByText('Greenwood Heights (BLD-A)')).toBeInTheDocument()
     expect(screen.getByText('—')).toBeInTheDocument()
+  })
+
+  it('shows the linked account email and No account states in the Account column', async () => {
+    renderPage()
+
+    await screen.findByText('Rahul Sharma')
+    const rahulRow = screen.getByText('Rahul Sharma').closest('tr')
+    expect(rahulRow).toHaveTextContent('rahul@bmms.test')
+
+    const priyaRow = screen.getByText('Priya Menon').closest('tr')
+    expect(priyaRow).toHaveTextContent('No account')
   })
 
   it('shows loading and API error states, with retry', async () => {

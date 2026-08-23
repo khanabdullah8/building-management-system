@@ -19,6 +19,25 @@ const buildings = [
   { id: 'building-2', code: 'BLD-B', name: 'Maple Residency', status: 'active' },
 ]
 
+const residents = [
+  {
+    id: 'resident-1',
+    name: 'Rita Resident',
+    type: 'owner',
+    status: 'active',
+    unit: { id: 'unit-1', unitNumber: 'A-101', building: { id: 'building-1', code: 'BLD-A', name: 'Greenwood Heights' } },
+    account: { linked: true, userEmail: 'rita@bmms.test' },
+  },
+  {
+    id: 'resident-2',
+    name: 'Omar Occupant',
+    type: 'tenant',
+    status: 'active',
+    unit: { id: 'unit-2', unitNumber: 'A-102', building: { id: 'building-1', code: 'BLD-A', name: 'Greenwood Heights' } },
+    account: { linked: false, userEmail: null },
+  },
+]
+
 const users = [
   {
     id: 'user-admin',
@@ -43,11 +62,24 @@ const users = [
     role: 'resident',
     status: 'inactive',
     buildings: [],
+    resident: {
+      id: 'resident-1',
+      name: 'Rita Resident',
+      unit: { id: 'unit-1', unitNumber: 'A-101' },
+    },
+  },
+  {
+    id: 'user-unlinked',
+    name: 'Ulla Unlinked',
+    email: 'ulla@bmms.test',
+    role: 'resident',
+    status: 'active',
+    buildings: [],
   },
   {
     id: 'user-unassigned',
     name: 'Ulla Unassigned',
-    email: 'ulla@bmms.test',
+    email: 'ullas@bmms.test',
     role: 'staff',
     status: 'active',
     buildings: [],
@@ -62,6 +94,9 @@ function mockList(data = users) {
   http.get.mockImplementation((url) => {
     if (String(url).startsWith('/v1/buildings')) {
       return Promise.resolve({ data: { success: true, data: buildings } })
+    }
+    if (String(url).startsWith('/v1/residents')) {
+      return Promise.resolve({ data: { success: true, data: residents } })
     }
     return Promise.resolve({ data: { success: true, data } })
   })
@@ -89,7 +124,18 @@ describe('UsersPage admin user management', () => {
     expect(screen.getByText('Rita Resident')).toBeInTheDocument()
     expect(screen.getByText('Greenwood Heights')).toBeInTheDocument()
     expect(screen.getByText('None assigned')).toBeInTheDocument()
-    expect(screen.getAllByRole('button', { name: 'Edit' })).toHaveLength(4)
+    expect(screen.getAllByRole('button', { name: 'Edit' })).toHaveLength(5)
+  })
+
+  it('shows linked-resident info in the buildings column for resident rows', async () => {
+    renderPage()
+
+    await screen.findByText('Ada Admin')
+    const linkedRow = screen.getByText('Rita Resident').closest('tr')
+    expect(within(linkedRow).getByText('Linked · A-101')).toBeInTheDocument()
+
+    const unlinkedRow = screen.getByText('Ulla Unlinked').closest('tr')
+    expect(within(unlinkedRow).getByText('No resident linked')).toBeInTheDocument()
   })
 
   it('shows a loading state while users are loading', () => {
@@ -459,5 +505,197 @@ describe('UsersPage admin user management', () => {
 
     expect(await screen.findByText('Buildings unavailable')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument()
+  })
+
+  it('shows the linked-resident selector with the current link preselected for resident users', async () => {
+    const user = userEvent.setup()
+    renderPage()
+
+    await openEditFor(user, 'Rita Resident')
+
+    expect(screen.getByText('Linked Resident')).toBeInTheDocument()
+    const select = screen.getByLabelText('Linked Resident')
+    expect(select).toHaveValue('resident-1')
+  })
+
+  it('hides the linked-resident selector for staff and admin roles', async () => {
+    const user = userEvent.setup()
+    renderPage()
+
+    await openEditFor(user, 'Ada Admin')
+    expect(screen.queryByText('Linked Resident')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+    await openEditFor(user, 'Sam Staffman')
+    expect(screen.queryByText('Linked Resident')).not.toBeInTheDocument()
+  })
+
+  it('shows a loading state for the resident list while it fetches', async () => {
+    http.get.mockImplementation((url) => {
+      if (String(url).startsWith('/v1/residents')) return new Promise(() => {})
+      return Promise.resolve({ data: { success: true, data: users } })
+    })
+    renderPage()
+
+    await screen.findByText('Rita Resident')
+    const row = screen.getByText('Rita Resident').closest('tr')
+    const user = userEvent.setup()
+    await user.click(within(row).getByRole('button', { name: 'Edit' }))
+
+    expect(screen.getByText('Linked Resident')).toBeInTheDocument()
+    expect(screen.getAllByText(/Loading residents/)).not.toHaveLength(0)
+  })
+
+  it('shows a retry option when the resident list fails to load', async () => {
+    http.get.mockImplementation((url) => {
+      if (String(url).startsWith('/v1/residents')) {
+        return Promise.reject(new Error('Residents unavailable'))
+      }
+      return Promise.resolve({ data: { success: true, data: users } })
+    })
+    const user = userEvent.setup()
+    renderPage()
+
+    await screen.findByText('Rita Resident')
+    const row = screen.getByText('Rita Resident').closest('tr')
+    await user.click(within(row).getByRole('button', { name: 'Edit' }))
+
+    expect(await screen.findByText('Residents unavailable')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument()
+  })
+
+  it('shows an empty state when no residents exist', async () => {
+    http.get.mockImplementation((url) => {
+      if (String(url).startsWith('/v1/residents')) {
+        return Promise.resolve({ data: { success: true, data: [] } })
+      }
+      return Promise.resolve({ data: { success: true, data: users } })
+    })
+    const user = userEvent.setup()
+    renderPage()
+
+    await openEditFor(user, 'Rita Resident')
+
+    expect(await screen.findByText('No residents available yet.')).toBeInTheDocument()
+  })
+
+  it('saves a new resident link and refreshes the list', async () => {
+    const user = userEvent.setup()
+    http.patch.mockResolvedValueOnce({ data: { success: true, data: users[3] } })
+    renderPage()
+
+    await openEditFor(user, 'Ulla Unlinked')
+    await screen.findByLabelText('Linked Resident')
+    await user.selectOptions(screen.getByLabelText('Linked Resident'), 'resident-2')
+    await user.click(screen.getByRole('button', { name: 'Save Changes' }))
+
+    await waitFor(() => {
+      expect(http.patch).toHaveBeenCalledWith('/v1/users/user-unlinked', {
+        name: 'Ulla Unlinked',
+        email: 'ulla@bmms.test',
+        role: 'resident',
+        status: 'active',
+        resident: 'resident-2',
+      })
+    })
+    expect(await screen.findByText('User updated successfully.')).toBeInTheDocument()
+  })
+
+  it('clears the resident link by sending null on save', async () => {
+    const user = userEvent.setup()
+    http.patch.mockResolvedValueOnce({ data: { success: true, data: users[2] } })
+    renderPage()
+
+    await openEditFor(user, 'Rita Resident')
+    await screen.findByLabelText('Linked Resident')
+    await user.selectOptions(screen.getByLabelText('Linked Resident'), '')
+    await user.click(screen.getByRole('button', { name: 'Save Changes' }))
+
+    await waitFor(() => {
+      expect(http.patch).toHaveBeenCalledWith('/v1/users/user-resident', {
+        name: 'Rita Resident',
+        email: 'rita@bmms.test',
+        role: 'resident',
+        status: 'inactive',
+        resident: null,
+      })
+    })
+    expect(await screen.findByText('User updated successfully.')).toBeInTheDocument()
+  })
+
+  it('keeps an unchanged resident link in the update payload', async () => {
+    const user = userEvent.setup()
+    http.patch.mockResolvedValueOnce({ data: { success: true, data: users[2] } })
+    renderPage()
+
+    await openEditFor(user, 'Rita Resident')
+    await screen.findByLabelText('Linked Resident')
+    await user.clear(screen.getByLabelText(/^Name/))
+    await user.type(screen.getByLabelText(/^Name/), 'Rita R.')
+    await user.click(screen.getByRole('button', { name: 'Save Changes' }))
+
+    await waitFor(() => {
+      expect(http.patch).toHaveBeenCalledWith('/v1/users/user-resident', {
+        name: 'Rita R.',
+        email: 'rita@bmms.test',
+        role: 'resident',
+        status: 'inactive',
+        resident: 'resident-1',
+      })
+    })
+  })
+
+  it('includes the selected resident when creating a resident-role user', async () => {
+    const user = userEvent.setup()
+    http.post.mockResolvedValueOnce({ data: { success: true, data: { id: 'user-new' } } })
+    renderPage()
+
+    await screen.findByText('Ada Admin')
+    await user.click(screen.getByRole('button', { name: 'New User' }))
+    await user.type(screen.getByLabelText(/^Name/), 'Nina Newresident')
+    await user.type(screen.getByLabelText(/^Email/), 'nina@bmms.test')
+    await user.type(screen.getByLabelText(/^Password/), 'password123')
+    const select = await screen.findByLabelText('Linked Resident')
+    await user.selectOptions(select, 'resident-2')
+    await user.click(screen.getByRole('button', { name: 'Create User' }))
+
+    await waitFor(() => {
+      expect(http.post).toHaveBeenCalledWith('/v1/users', {
+        name: 'Nina Newresident',
+        email: 'nina@bmms.test',
+        password: 'password123',
+        role: 'resident',
+        status: 'active',
+        resident: 'resident-2',
+      })
+    })
+    expect(await screen.findByText('User created successfully.')).toBeInTheDocument()
+  })
+
+  it('omits the resident field from staff payloads entirely', async () => {
+    const user = userEvent.setup()
+    http.post.mockResolvedValueOnce({ data: { success: true, data: { id: 'user-new' } } })
+    renderPage()
+
+    await screen.findByText('Ada Admin')
+    await user.click(screen.getByRole('button', { name: 'New User' }))
+    await user.type(screen.getByLabelText(/^Name/), 'Nina Newstaff')
+    await user.type(screen.getByLabelText(/^Email/), 'nina2@bmms.test')
+    await user.type(screen.getByLabelText(/^Password/), 'password123')
+    await user.selectOptions(screen.getByLabelText(/^Role/), 'staff')
+    await screen.findByRole('checkbox', { name: /BLD-A.{0,3}Greenwood Heights/ })
+    await user.click(screen.getByRole('button', { name: 'Create User' }))
+
+    await waitFor(() => {
+      expect(http.post).toHaveBeenCalledWith('/v1/users', {
+        name: 'Nina Newstaff',
+        email: 'nina2@bmms.test',
+        password: 'password123',
+        role: 'staff',
+        status: 'active',
+        buildings: [],
+      })
+    })
+    expect(await screen.findByText('User created successfully.')).toBeInTheDocument()
   })
 })

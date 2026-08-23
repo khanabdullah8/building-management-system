@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 const Resident = require('../models/Resident');
 const Unit = require('../models/Unit');
+const User = require('../models/User');
 const ApiError = require('../utils/ApiError');
 const { sendSuccess } = require('../utils/apiResponse');
 const asyncHandler = require('../utils/asyncHandler');
@@ -14,6 +15,39 @@ const residentPopulation = {
     select: 'name code',
   },
 };
+
+/**
+ * Attaches additive login-account info to resident responses:
+ *   { account: { linked: boolean, userEmail: string|null } }
+ *
+ * Uses a single batched User.find() over all resident ids (no N+1).
+ * Returns plain objects so the extra field survives toJSON transforms.
+ */
+async function attachAccountInfo(residents) {
+  const list = Array.isArray(residents) ? residents : [residents];
+
+  const accountMap = {};
+  if (list.length > 0) {
+    const accounts = await User.find({ resident: { $in: list.map((r) => r._id) } })
+      .select('email resident')
+      .lean();
+    for (const account of accounts) {
+      const key = account.resident.toString();
+      if (!accountMap[key]) {
+        accountMap[key] = account.email;
+      }
+    }
+  }
+
+  return list.map((resident) => {
+    const obj = resident.toObject();
+    const userEmail = accountMap[resident._id.toString()];
+    obj.account = userEmail
+      ? { linked: true, userEmail }
+      : { linked: false, userEmail: null };
+    return obj;
+  });
+}
 
 const getResidents = asyncHandler(async (req, res) => {
   const { search } = req.query;
@@ -48,7 +82,7 @@ const getResidents = asyncHandler(async (req, res) => {
     .populate(residentPopulation)
     .sort({ createdAt: -1 });
 
-  return sendSuccess(res, residents);
+  return sendSuccess(res, await attachAccountInfo(residents));
 });
 
 const getResidentById = asyncHandler(async (req, res) => {
@@ -66,7 +100,7 @@ const getResidentById = asyncHandler(async (req, res) => {
   const { buildingIds, unitId } = req.scope;
   if (req.user.role === 'resident') {
     if (unitId && resident.unit && resident.unit._id.toString() === unitId) {
-      return sendSuccess(res, resident);
+      return sendSuccess(res, (await attachAccountInfo(resident))[0]);
     }
     throw new ApiError(403, 'Forbidden: insufficient permissions');
   } else if (buildingIds !== null) {
@@ -78,7 +112,7 @@ const getResidentById = asyncHandler(async (req, res) => {
     }
   }
 
-  return sendSuccess(res, resident);
+  return sendSuccess(res, (await attachAccountInfo(resident))[0]);
 });
 
 const validateUnit = async (unitId) => {

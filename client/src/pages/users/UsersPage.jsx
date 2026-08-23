@@ -102,7 +102,17 @@ function UsersPage() {
       header: 'Buildings',
       render: (value, row) => {
         if (row.role === 'admin') return <span className="users-scope-label">All</span>
-        if (row.role === 'resident') return <span className="users-scope-label">Resident scope</span>
+        if (row.role === 'resident') {
+          if (row.resident) {
+            const unitNumber = row.resident.unit?.unitNumber ? ` · ${row.resident.unit.unitNumber}` : ''
+            return (
+              <span className="users-scope-label">
+                {`Linked${unitNumber}`}
+              </span>
+            )
+          }
+          return <span className="users-scope-empty">No resident linked</span>
+        }
         if (!value || value.length === 0) return <span className="users-scope-empty">None assigned</span>
         return (
           <span className="users-buildings-list">

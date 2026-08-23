@@ -103,6 +103,16 @@ function ResidentsPage() {
       render: (value) => <Badge tone={statusTone(value)}>{value}</Badge>,
     },
     {
+      key: 'account',
+      header: 'Account',
+      render: (_, resident) => {
+        if (resident.account?.linked) {
+          return <span className="resident-account-linked">{resident.account.userEmail}</span>
+        }
+        return <span className="resident-account-none">No account</span>
+      },
+    },
+    {
       key: 'actions',
       header: 'Actions',
       render: (_, resident) => (

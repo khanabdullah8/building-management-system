@@ -1,12 +1,20 @@
 const mongoose = require('mongoose');
 const User = require('../models/User');
 const Building = require('../models/Building');
+const Resident = require('../models/Resident');
 const ApiError = require('../utils/ApiError');
 const asyncHandler = require('../utils/asyncHandler');
 const { sendSuccess } = require('../utils/apiResponse');
 
 const VALID_ROLES = ['admin', 'staff', 'resident'];
 const VALID_STATUSES = ['active', 'inactive'];
+
+const buildingPopulation = { path: 'buildings', select: 'code name' };
+const residentPopulation = {
+  path: 'resident',
+  select: 'name type status unit',
+  populate: { path: 'unit', select: 'unitNumber' },
+};
 
 function escapeRegExp(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -54,8 +62,51 @@ async function validateBuildingAssignments(rawBuildings) {
   return uniqueIds;
 }
 
-async function populateUserBuildings(user) {
-  await user.populate({ path: 'buildings', select: 'code name' });
+/**
+ * Validates a client-supplied resident link (User.resident):
+ * - null / empty string means "clear the link" and returns null
+ * - otherwise the value must be a valid ObjectId string (400)
+ * - the referenced Resident must exist (400)
+ * - the Resident must not already be linked to another user (400);
+ *   the user being updated is excluded so keeping its own link is allowed
+ *
+ * Returns the validated resident ID string, or null when clearing.
+ */
+async function validateResidentLink(rawResident, excludeUserId) {
+  if (rawResident === null || rawResident === '') {
+    return null;
+  }
+
+  if (typeof rawResident !== 'string' || !mongoose.Types.ObjectId.isValid(rawResident.trim())) {
+    throw new ApiError(400, 'Invalid resident ID', { resident: 'Invalid resident ID' });
+  }
+
+  const id = rawResident.trim();
+
+  const residentExists = await Resident.findById(id).select('_id').lean();
+  if (!residentExists) {
+    throw new ApiError(400, 'Selected resident does not exist', {
+      resident: 'Selected resident does not exist',
+    });
+  }
+
+  const linkQuery = { resident: new mongoose.Types.ObjectId(id) };
+  if (excludeUserId) {
+    linkQuery._id = { $ne: new mongoose.Types.ObjectId(excludeUserId) };
+  }
+  const existingLink = await User.findOne(linkQuery).select('_id').lean();
+  if (existingLink) {
+    throw new ApiError(400, 'This resident is already linked to another user account', {
+      resident: 'This resident is already linked to another user account',
+    });
+  }
+
+  return id;
+}
+
+async function populateUserRelations(user) {
+  await user.populate(buildingPopulation);
+  await user.populate(residentPopulation);
   return user;
 }
 
@@ -77,7 +128,8 @@ const getUsers = asyncHandler(async (req, res) => {
   }
 
   const users = await User.find(filter)
-    .populate('buildings', 'code name')
+    .populate(buildingPopulation)
+    .populate(residentPopulation)
     .sort({ createdAt: -1 });
 
   sendSuccess(res, users);
@@ -90,7 +142,7 @@ const getUserById = asyncHandler(async (req, res) => {
     throw new ApiError(404, 'User not found');
   }
 
-  const user = await User.findById(id).populate('buildings', 'code name');
+  const user = await User.findById(id).populate(buildingPopulation).populate(residentPopulation);
   if (!user) {
     throw new ApiError(404, 'User not found');
   }
@@ -99,7 +151,7 @@ const getUserById = asyncHandler(async (req, res) => {
 });
 
 const createUser = asyncHandler(async (req, res) => {
-  const { name, email, password, role, status, buildings } = req.body;
+  const { name, email, password, role, status, buildings, resident } = req.body;
 
   if (!name || typeof name !== 'string' || !name.trim()) {
     throw new ApiError(400, 'Name is required', { name: 'Name is required' });
@@ -143,6 +195,18 @@ const createUser = asyncHandler(async (req, res) => {
     validatedBuildings = await validateBuildingAssignments(buildings);
   }
 
+  // A non-empty resident value is treated as an assignment request at creation.
+  // Explicit null / empty string simply means "no link" and is ignored here.
+  let validatedResident;
+  if (resident !== undefined && resident !== null && resident !== '') {
+    if (effectiveRole !== 'resident') {
+      throw new ApiError(400, 'Resident links can only be applied to resident users', {
+        resident: 'Resident links can only be applied to resident users',
+      });
+    }
+    validatedResident = await validateResidentLink(resident, null);
+  }
+
   const normalizedEmail = email.toLowerCase().trim();
   const existing = await User.findOne({ email: normalizedEmail });
   if (existing) {
@@ -157,9 +221,10 @@ const createUser = asyncHandler(async (req, res) => {
   if (role !== undefined) userData.role = role;
   if (status !== undefined) userData.status = status;
   if (validatedBuildings !== undefined) userData.buildings = validatedBuildings;
+  if (validatedResident !== undefined) userData.resident = validatedResident;
 
   const user = await User.create(userData);
-  await populateUserBuildings(user);
+  await populateUserRelations(user);
   sendSuccess(res, user, 'User created successfully', null, 201);
 });
 
@@ -176,7 +241,7 @@ const updateUser = asyncHandler(async (req, res) => {
   }
 
   // Explicit field allowlist — never spread req.body.
-  const { name, email, role, status, buildings } = req.body;
+  const { name, email, role, status, buildings, resident } = req.body;
 
   // Self-protection: an admin cannot change their own role or deactivate themselves.
   if (
@@ -232,14 +297,28 @@ const updateUser = asyncHandler(async (req, res) => {
     validatedBuildings = [];
   }
 
+  let validatedResident;
+  if (resident !== undefined) {
+    if (effectiveRole !== 'resident') {
+      throw new ApiError(400, 'Resident links can only be applied to resident users', {
+        resident: 'Resident links can only be applied to resident users',
+      });
+    }
+    validatedResident = await validateResidentLink(resident, id);
+  } else if (role !== undefined && effectiveRole !== 'resident') {
+    // Demotion: clear stale resident links so no scope data lingers.
+    validatedResident = null;
+  }
+
   if (name !== undefined) user.name = name.trim();
   if (email !== undefined) user.email = email.toLowerCase().trim();
   if (role !== undefined) user.role = role;
   if (status !== undefined) user.status = status;
   if (validatedBuildings !== undefined) user.buildings = validatedBuildings;
+  if (validatedResident !== undefined) user.resident = validatedResident;
 
   await user.save();
-  await populateUserBuildings(user);
+  await populateUserRelations(user);
 
   sendSuccess(res, user, 'User updated successfully');
 });

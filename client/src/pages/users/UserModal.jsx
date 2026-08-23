@@ -19,6 +19,15 @@ function buildingId(building) {
   return building?.id || building?._id || building
 }
 
+function residentRefId(resident) {
+  return resident?.id || resident?._id || resident
+}
+
+function residentOptionLabel(resident) {
+  const unit = resident?.unit?.unitNumber ? ` (${resident.unit.unitNumber})` : ''
+  return `${resident.name}${unit}`
+}
+
 function UserModal({ isOpen, user, onClose, onSuccess }) {
   const isEdit = Boolean(user?.id)
   const [formData, setFormData] = useState({
@@ -31,9 +40,15 @@ function UserModal({ isOpen, user, onClose, onSuccess }) {
   const [selectedBuildingIds, setSelectedBuildingIds] = useState(
     Array.isArray(user?.buildings) ? user.buildings.map(buildingId).filter(Boolean) : []
   )
+  const [selectedResidentId, setSelectedResidentId] = useState(
+    String(residentRefId(user?.resident) || '')
+  )
   const [buildings, setBuildings] = useState([])
   const [buildingsLoading, setBuildingsLoading] = useState(true)
   const [buildingsError, setBuildingsError] = useState(null)
+  const [residents, setResidents] = useState([])
+  const [residentsLoading, setResidentsLoading] = useState(true)
+  const [residentsError, setResidentsError] = useState(null)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState(null)
   const [fieldErrors, setFieldErrors] = useState({})
@@ -61,6 +76,34 @@ function UserModal({ isOpen, user, onClose, onSuccess }) {
     }
 
     loadBuildings()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+
+    const loadResidents = async () => {
+      setResidentsLoading(true)
+      setResidentsError(null)
+      try {
+        const response = await http.get('/v1/residents')
+        if (!cancelled) {
+          setResidents(response.data?.data || [])
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setResidentsError(err.message || 'Failed to load residents.')
+        }
+      } finally {
+        if (!cancelled) {
+          setResidentsLoading(false)
+        }
+      }
+    }
+
+    loadResidents()
     return () => {
       cancelled = true
     }
@@ -116,7 +159,8 @@ function UserModal({ isOpen, user, onClose, onSuccess }) {
       return
     }
 
-    // Explicit payload — never send building assignments for non-staff roles.
+    // Explicit payload — never send building assignments for non-staff roles,
+    // and never send resident links for non-resident roles.
     const payload = {
       name: formData.name.trim(),
       email: formData.email.trim(),
@@ -128,6 +172,11 @@ function UserModal({ isOpen, user, onClose, onSuccess }) {
     }
     if (formData.role === 'staff') {
       payload.buildings = selectedBuildingIds
+    }
+    if (formData.role === 'resident') {
+      if (isEdit || selectedResidentId) {
+        payload.resident = selectedResidentId || null
+      }
     }
 
     setSubmitting(true)
@@ -150,6 +199,20 @@ function UserModal({ isOpen, user, onClose, onSuccess }) {
   }
 
   const showBuildings = formData.role === 'staff'
+  const showResidentLink = formData.role === 'resident'
+
+  const retryResidents = async () => {
+    setResidentsLoading(true)
+    setResidentsError(null)
+    try {
+      const response = await http.get('/v1/residents')
+      setResidents(response.data?.data || [])
+    } catch (err) {
+      setResidentsError(err.message || 'Failed to load residents.')
+    } finally {
+      setResidentsLoading(false)
+    }
+  }
 
   return (
     <Modal isOpen={isOpen} onClose={handleClose} title={isEdit ? 'Edit User' : 'New User'}>
@@ -242,6 +305,43 @@ function UserModal({ isOpen, user, onClose, onSuccess }) {
                   )
                 })}
               </div>
+            )}
+          </fieldset>
+        )}
+
+        {showResidentLink && (
+          <fieldset className="user-buildings-fieldset">
+            <legend className="form-label">Linked Resident</legend>
+            {residentsLoading && <Spinner label="Loading residents…" />}
+            {!residentsLoading && residentsError && (
+              <div className="user-buildings-state">
+                <p>{residentsError}</p>
+                <button type="button" className="btn btn-secondary" onClick={retryResidents}>
+                  Retry
+                </button>
+              </div>
+            )}
+            {!residentsLoading && !residentsError && residents.length === 0 && (
+              <p className="user-buildings-empty">No residents available yet.</p>
+            )}
+            {!residentsLoading && !residentsError && residents.length > 0 && (
+              <select
+                id="user-resident"
+                aria-label="Linked Resident"
+                className="form-input"
+                value={selectedResidentId}
+                onChange={(event) => setSelectedResidentId(event.target.value)}
+              >
+                <option value="">No resident linked (optional)</option>
+                {residents.map((resident) => {
+                  const id = String(residentRefId(resident))
+                  return (
+                    <option key={id} value={id}>
+                      {residentOptionLabel(resident)}
+                    </option>
+                  )
+                })}
+              </select>
             )}
           </fieldset>
         )}
