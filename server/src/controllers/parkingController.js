@@ -6,6 +6,7 @@ const ApiError = require('../utils/ApiError');
 const { sendSuccess } = require('../utils/apiResponse');
 const asyncHandler = require('../utils/asyncHandler');
 const { isBuildingAllowed } = require('../utils/scope');
+const { record: recordAudit } = require('../services/auditService');
 
 const buildingPopulation = { path: 'building', select: 'name code' };
 
@@ -130,7 +131,7 @@ const createParkingSlot = asyncHandler(async (req, res) => {
     throw new ApiError(400, 'Building ID is required', { building: 'Building ID is required' });
   }
 
-  await validateBuilding(buildingId);
+  const buildingDoc = await validateBuilding(buildingId);
 
   if (!isBuildingAllowed(req.scope.buildingIds, buildingId)) {
     throw new ApiError(403, 'Forbidden: insufficient permissions');
@@ -166,6 +167,20 @@ const createParkingSlot = asyncHandler(async (req, res) => {
     vehicleType: vehicleType || 'car',
     vehicleNumber: unitId ? (vehicleNumber !== undefined ? vehicleNumber.trim() : '') : '',
   });
+
+  try {
+    await recordAudit({
+      actor: req.user,
+      action: 'created',
+      module: 'parking',
+      resourceId: slot._id,
+      resourceLabel: slot.slotCode,
+      buildingId: slot.building,
+      buildingName: buildingDoc.name || buildingDoc.code,
+    });
+  } catch (err) {
+    console.error('Audit log failed:', err.message);
+  }
 
   await slot.populate(buildingPopulation);
   await slot.populate(parkingPopulation);
@@ -235,6 +250,21 @@ const updateParkingSlot = asyncHandler(async (req, res) => {
   }
 
   const updatedSlot = await slot.save();
+
+  try {
+    await recordAudit({
+      actor: req.user,
+      action: 'updated',
+      module: 'parking',
+      resourceId: updatedSlot._id,
+      resourceLabel: updatedSlot.slotCode,
+      buildingId: updatedSlot.building,
+    });
+  } catch (err) {
+    console.error('Audit log failed:', err.message);
+  }
+
+
   await updatedSlot.populate(buildingPopulation);
   await updatedSlot.populate(parkingPopulation);
 
@@ -256,8 +286,21 @@ const deleteParkingSlot = asyncHandler(async (req, res) => {
   if (!isBuildingAllowed(req.scope.buildingIds, slot.building)) {
     throw new ApiError(403, 'Forbidden: insufficient permissions');
   }
-
   await Parking.findByIdAndDelete(id);
+
+  try {
+    await recordAudit({
+      actor: req.user,
+      action: 'deleted',
+      module: 'parking',
+      resourceId: id,
+      resourceLabel: slot.slotCode,
+      buildingId: slot.building,
+    });
+  } catch (err) {
+    console.error('Audit log failed:', err.message);
+  }
+
   return sendSuccess(res, null, 'Parking slot deleted successfully');
 });
 

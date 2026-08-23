@@ -9,6 +9,7 @@ const {
   notifyMaintenanceCreated,
   notifyMaintenanceStatusChanged,
 } = require('../services/notificationService');
+const { record: recordAudit } = require('../services/auditService');
 
 const maintenancePopulation = {
   path: 'unit',
@@ -142,6 +143,19 @@ const createMaintenanceRequest = asyncHandler(async (req, res) => {
     status,
   });
 
+  try {
+    await recordAudit({
+      actor: req.user,
+      action: 'created',
+      module: 'maintenance',
+      resourceId: maintenance._id,
+      resourceLabel: maintenance.title,
+      buildingId: unit.building,
+    });
+  } catch (err) {
+    console.error('Audit log failed:', err.message);
+  }
+
   // Fan-out must never break the primary operation (no transactions in this
   // codebase), so notification failures are logged and swallowed.
   try {
@@ -236,6 +250,19 @@ const updateMaintenanceRequest = asyncHandler(async (req, res) => {
 
   const updatedMaintenance = await maintenance.save();
 
+  try {
+    await recordAudit({
+      actor: req.user,
+      action: 'updated',
+      module: 'maintenance',
+      resourceId: updatedMaintenance._id,
+      resourceLabel: updatedMaintenance.title,
+      buildingId: existingUnit ? existingUnit.building : null,
+    });
+  } catch (err) {
+    console.error('Audit log failed:', err.message);
+  }
+
   if (status !== undefined && status !== previousStatus) {
     // Fan-out must never break the primary operation (no transactions in
     // this codebase), so notification failures are logged and swallowed.
@@ -276,7 +303,22 @@ const deleteMaintenanceRequest = asyncHandler(async (req, res) => {
     }
   }
 
+  const auditUnit = await Unit.findById(maintenance.unit).select('building').lean();
+
   await Maintenance.findByIdAndDelete(id);
+
+  try {
+    await recordAudit({
+      actor: req.user,
+      action: 'deleted',
+      module: 'maintenance',
+      resourceId: id,
+      resourceLabel: maintenance.title,
+      buildingId: auditUnit ? auditUnit.building : null,
+    });
+  } catch (err) {
+    console.error('Audit log failed:', err.message);
+  }
 
   return sendSuccess(res, null, 'Maintenance request deleted successfully');
 });

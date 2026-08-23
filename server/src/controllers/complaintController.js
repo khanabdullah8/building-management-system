@@ -6,6 +6,7 @@ const ApiError = require('../utils/ApiError');
 const { sendSuccess } = require('../utils/apiResponse');
 const asyncHandler = require('../utils/asyncHandler');
 const { isBuildingAllowed, unitScopeFilter } = require('../utils/scope');
+const { record: recordAudit } = require('../services/auditService');
 
 const complaintPopulation = {
   path: 'unit',
@@ -211,6 +212,19 @@ const createComplaint = asyncHandler(async (req, res) => {
     status,
   });
 
+  try {
+    await recordAudit({
+      actor: req.user,
+      action: 'created',
+      module: 'complaint',
+      resourceId: complaint._id,
+      resourceLabel: complaint.subject,
+      buildingId: resolvedBuildingId,
+    });
+  } catch (err) {
+    console.error('Audit log failed:', err.message);
+  }
+
   await complaint.populate(complaintPopulation);
   return sendSuccess(res, complaint, 'Complaint created successfully', null, 201);
 });
@@ -324,6 +338,20 @@ const updateComplaint = asyncHandler(async (req, res) => {
   }
 
   const updatedComplaint = await complaint.save();
+
+  try {
+    await recordAudit({
+      actor: req.user,
+      action: 'updated',
+      module: 'complaint',
+      resourceId: updatedComplaint._id,
+      resourceLabel: updatedComplaint.subject,
+      buildingId: updatedComplaint.building,
+    });
+  } catch (err) {
+    console.error('Audit log failed:', err.message);
+  }
+
   await updatedComplaint.populate(complaintPopulation);
   return sendSuccess(res, updatedComplaint, 'Complaint updated successfully');
 });
@@ -365,6 +393,20 @@ const deleteComplaint = asyncHandler(async (req, res) => {
   }
 
   await Complaint.findByIdAndDelete(id);
+
+  try {
+    await recordAudit({
+      actor: req.user,
+      action: 'deleted',
+      module: 'complaint',
+      resourceId: id,
+      resourceLabel: complaint.subject,
+      buildingId: complaint.building,
+    });
+  } catch (err) {
+    console.error('Audit log failed:', err.message);
+  }
+
   return sendSuccess(res, null, 'Complaint deleted successfully');
 });
 

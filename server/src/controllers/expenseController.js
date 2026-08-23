@@ -5,6 +5,7 @@ const ApiError = require('../utils/ApiError');
 const { sendSuccess } = require('../utils/apiResponse');
 const asyncHandler = require('../utils/asyncHandler');
 const { hasGlobalAccess, isBuildingAllowed } = require('../utils/scope');
+const { record: recordAudit } = require('../services/auditService');
 
 const expensePopulation = { path: 'building', select: 'name code' };
 
@@ -157,6 +158,20 @@ const createExpense = asyncHandler(async (req, res) => {
     status: status || 'pending',
   });
 
+  try {
+    await recordAudit({
+      actor: req.user,
+      action: 'created',
+      module: 'expense',
+      resourceId: expense._id,
+      resourceLabel: expense.category,
+      buildingId: expense.building,
+      buildingName: building.name || building.code,
+    });
+  } catch (err) {
+    console.error('Audit log failed:', err.message);
+  }
+
   await expense.populate(expensePopulation);
   return sendSuccess(res, expense, 'Expense created successfully', null, 201);
 });
@@ -224,6 +239,21 @@ const updateExpense = asyncHandler(async (req, res) => {
   }
 
   const updatedExpense = await expense.save();
+
+  try {
+    await recordAudit({
+      actor: req.user,
+      action: 'updated',
+      module: 'expense',
+      resourceId: updatedExpense._id,
+      resourceLabel: updatedExpense.category,
+      buildingId: updatedExpense.building,
+    });
+  } catch (err) {
+    console.error('Audit log failed:', err.message);
+  }
+
+
   await updatedExpense.populate(expensePopulation);
   return sendSuccess(res, updatedExpense, 'Expense updated successfully');
 });
@@ -245,6 +275,19 @@ const deleteExpense = asyncHandler(async (req, res) => {
   }
 
   await Expense.findByIdAndDelete(id);
+
+  try {
+    await recordAudit({
+      actor: req.user,
+      action: 'deleted',
+      module: 'expense',
+      resourceId: id,
+      resourceLabel: expense.category,
+      buildingId: expense.building,
+    });
+  } catch (err) {
+    console.error('Audit log failed:', err.message);
+  }
 
   return sendSuccess(res, null, 'Expense deleted successfully');
 });

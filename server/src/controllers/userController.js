@@ -5,6 +5,7 @@ const Resident = require('../models/Resident');
 const ApiError = require('../utils/ApiError');
 const asyncHandler = require('../utils/asyncHandler');
 const { sendSuccess } = require('../utils/apiResponse');
+const { record: recordAudit } = require('../services/auditService');
 
 const VALID_ROLES = ['admin', 'staff', 'resident'];
 const VALID_STATUSES = ['active', 'inactive'];
@@ -224,6 +225,19 @@ const createUser = asyncHandler(async (req, res) => {
   if (validatedResident !== undefined) userData.resident = validatedResident;
 
   const user = await User.create(userData);
+
+  try {
+    await recordAudit({
+      actor: req.user,
+      action: 'created',
+      module: 'user',
+      resourceId: user._id,
+      resourceLabel: user.email,
+    });
+  } catch (err) {
+    console.error('Audit log failed:', err.message);
+  }
+
   await populateUserRelations(user);
   sendSuccess(res, user, 'User created successfully', null, 201);
 });
@@ -318,6 +332,19 @@ const updateUser = asyncHandler(async (req, res) => {
   if (validatedResident !== undefined) user.resident = validatedResident;
 
   await user.save();
+
+  try {
+    await recordAudit({
+      actor: req.user,
+      action: 'updated',
+      module: 'user',
+      resourceId: user._id,
+      resourceLabel: user.email,
+    });
+  } catch (err) {
+    console.error('Audit log failed:', err.message);
+  }
+
   await populateUserRelations(user);
 
   sendSuccess(res, user, 'User updated successfully');
@@ -340,6 +367,19 @@ const deleteUser = asyncHandler(async (req, res) => {
   }
 
   await User.findByIdAndDelete(id);
+
+  try {
+    await recordAudit({
+      actor: req.user,
+      action: 'deleted',
+      module: 'user',
+      resourceId: id,
+      resourceLabel: user.email,
+    });
+  } catch (err) {
+    console.error('Audit log failed:', err.message);
+  }
+
   sendSuccess(res, null, 'User deleted successfully');
 });
 

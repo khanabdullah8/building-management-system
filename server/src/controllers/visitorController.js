@@ -5,6 +5,7 @@ const ApiError = require('../utils/ApiError');
 const { sendSuccess } = require('../utils/apiResponse');
 const asyncHandler = require('../utils/asyncHandler');
 const { isBuildingAllowed, unitScopeFilter } = require('../utils/scope');
+const { record: recordAudit } = require('../services/auditService');
 
 const visitorPopulation = {
   path: 'unit',
@@ -151,6 +152,20 @@ const createVisitor = asyncHandler(async (req, res) => {
   };
 
   const visitor = await Visitor.create(visitorData);
+
+  try {
+    await recordAudit({
+      actor: req.user,
+      action: 'created',
+      module: 'visitor',
+      resourceId: visitor._id,
+      resourceLabel: visitor.name,
+      buildingId: unit.building,
+    });
+  } catch (err) {
+    console.error('Audit log failed:', err.message);
+  }
+
   await visitor.populate(visitorPopulation);
   return sendSuccess(res, visitor, 'Visitor registered successfully', null, 201);
 });
@@ -179,6 +194,10 @@ const updateVisitor = asyncHandler(async (req, res) => {
     }
   }
 
+  // Building snapshot for the audit record — reflects a reassignment
+  // when the unit changes during this update.
+  let auditBuildingId = existingUnit ? existingUnit.building : null;
+
   const { name, phone, unit: unitIdBody, purpose, checkInAt, checkOutAt } = req.body;
 
   if (name !== undefined) {
@@ -197,6 +216,7 @@ const updateVisitor = asyncHandler(async (req, res) => {
       throw new ApiError(403, 'Forbidden: cannot assign to unit outside your unit');
     }
     visitor.unit = unitIdBody;
+    auditBuildingId = unit.building;
   }
 
   if (phone !== undefined) {
@@ -238,6 +258,20 @@ const updateVisitor = asyncHandler(async (req, res) => {
   }
 
   const updatedVisitor = await visitor.save();
+
+  try {
+    await recordAudit({
+      actor: req.user,
+      action: 'updated',
+      module: 'visitor',
+      resourceId: updatedVisitor._id,
+      resourceLabel: updatedVisitor.name,
+      buildingId: auditBuildingId,
+    });
+  } catch (err) {
+    console.error('Audit log failed:', err.message);
+  }
+
   await updatedVisitor.populate(visitorPopulation);
   return sendSuccess(res, updatedVisitor, 'Visitor updated successfully');
 });
@@ -262,7 +296,23 @@ const deleteVisitor = asyncHandler(async (req, res) => {
     }
   }
 
+  const auditUnit = await Unit.findById(visitor.unit).select('building').lean();
+
   await Visitor.findByIdAndDelete(id);
+
+  try {
+    await recordAudit({
+      actor: req.user,
+      action: 'deleted',
+      module: 'visitor',
+      resourceId: id,
+      resourceLabel: visitor.name,
+      buildingId: auditUnit ? auditUnit.building : null,
+    });
+  } catch (err) {
+    console.error('Audit log failed:', err.message);
+  }
+
   return sendSuccess(res, null, 'Visitor deleted successfully');
 });
 

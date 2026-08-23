@@ -5,6 +5,7 @@ const ApiError = require('../utils/ApiError');
 const { sendSuccess } = require('../utils/apiResponse');
 const asyncHandler = require('../utils/asyncHandler');
 const { isBuildingAllowed } = require('../utils/scope');
+const { record: recordAudit } = require('../services/auditService');
 
 const getUnits = asyncHandler(async (req, res) => {
   const { search, status, building } = req.query;
@@ -108,6 +109,21 @@ const createUnit = asyncHandler(async (req, res) => {
     });
 
     await Building.findByIdAndUpdate(buildingId, { $inc: { units: 1 } });
+
+    try {
+      await recordAudit({
+        actor: req.user,
+        action: 'created',
+        module: 'unit',
+        resourceId: unit._id,
+        resourceLabel: unit.unitNumber,
+        buildingId,
+        buildingName: buildingDoc.name || buildingDoc.code,
+      });
+    } catch (err) {
+      console.error('Audit log failed:', err.message);
+    }
+
     await unit.populate('building', 'name code address');
 
     return sendSuccess(res, unit, 'Unit created successfully', null, 201);
@@ -187,6 +203,19 @@ const updateUnit = asyncHandler(async (req, res) => {
       await Building.findByIdAndUpdate(newBuildingId, { $inc: { units: 1 } });
     }
 
+    try {
+      await recordAudit({
+        actor: req.user,
+        action: 'updated',
+        module: 'unit',
+        resourceId: updatedUnit._id,
+        resourceLabel: updatedUnit.unitNumber,
+        buildingId: updatedUnit.building,
+      });
+    } catch (err) {
+      console.error('Audit log failed:', err.message);
+    }
+
     await updatedUnit.populate('building', 'name code address');
     return sendSuccess(res, updatedUnit, 'Unit updated successfully');
   } catch (error) {
@@ -218,6 +247,19 @@ const deleteUnit = asyncHandler(async (req, res) => {
   await Unit.findByIdAndDelete(id);
 
   await Building.findByIdAndUpdate(unit.building, { $inc: { units: -1 } });
+
+  try {
+    await recordAudit({
+      actor: req.user,
+      action: 'deleted',
+      module: 'unit',
+      resourceId: id,
+      resourceLabel: unit.unitNumber,
+      buildingId: unit.building,
+    });
+  } catch (err) {
+    console.error('Audit log failed:', err.message);
+  }
 
   return sendSuccess(res, null, 'Unit deleted successfully');
 });

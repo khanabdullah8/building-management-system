@@ -6,6 +6,7 @@ const ApiError = require('../utils/ApiError');
 const { sendSuccess } = require('../utils/apiResponse');
 const asyncHandler = require('../utils/asyncHandler');
 const { isBuildingAllowed, unitScopeFilter } = require('../utils/scope');
+const { record: recordAudit } = require('../services/auditService');
 
 const residentPopulation = {
   path: 'unit',
@@ -168,6 +169,19 @@ const createResident = asyncHandler(async (req, res) => {
     status,
   });
 
+  try {
+    await recordAudit({
+      actor: req.user,
+      action: 'created',
+      module: 'resident',
+      resourceId: resident._id,
+      resourceLabel: resident.name,
+      buildingId: unit.building,
+    });
+  } catch (err) {
+    console.error('Audit log failed:', err.message);
+  }
+
   await resident.populate(residentPopulation);
   return sendSuccess(res, resident, 'Resident created successfully', null, 201);
 });
@@ -191,6 +205,10 @@ const updateResident = asyncHandler(async (req, res) => {
 
   const { name, unit: unitId, phone, type, status } = req.body;
 
+  // Building snapshot for the audit record — reflects a reassignment
+  // when the unit changes during this update.
+  let auditBuildingId = existingUnit ? existingUnit.building : null;
+
   if (name !== undefined) {
     if (typeof name !== 'string' || !name.trim()) {
       throw new ApiError(400, 'Resident name cannot be empty', { name: 'Resident name cannot be empty' });
@@ -207,6 +225,7 @@ const updateResident = asyncHandler(async (req, res) => {
       throw new ApiError(403, 'Forbidden: cannot assign to unit outside your unit');
     }
     resident.unit = unitId;
+    auditBuildingId = unit.building;
   }
 
   if (phone !== undefined) {
@@ -231,6 +250,20 @@ const updateResident = asyncHandler(async (req, res) => {
   }
 
   const updatedResident = await resident.save();
+
+  try {
+    await recordAudit({
+      actor: req.user,
+      action: 'updated',
+      module: 'resident',
+      resourceId: updatedResident._id,
+      resourceLabel: updatedResident.name,
+      buildingId: auditBuildingId,
+    });
+  } catch (err) {
+    console.error('Audit log failed:', err.message);
+  }
+
   await updatedResident.populate(residentPopulation);
   return sendSuccess(res, updatedResident, 'Resident updated successfully');
 });
@@ -253,6 +286,19 @@ const deleteResident = asyncHandler(async (req, res) => {
   }
 
   await Resident.findByIdAndDelete(id);
+
+  try {
+    await recordAudit({
+      actor: req.user,
+      action: 'deleted',
+      module: 'resident',
+      resourceId: id,
+      resourceLabel: resident.name,
+      buildingId: existingUnit ? existingUnit.building : null,
+    });
+  } catch (err) {
+    console.error('Audit log failed:', err.message);
+  }
 
   return sendSuccess(res, null, 'Resident deleted successfully');
 });

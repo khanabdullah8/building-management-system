@@ -6,6 +6,7 @@ const ApiError = require('../utils/ApiError');
 const { sendSuccess } = require('../utils/apiResponse');
 const asyncHandler = require('../utils/asyncHandler');
 const { isBuildingAllowed, unitScopeFilter } = require('../utils/scope');
+const { record: recordAudit } = require('../services/auditService');
 
 const billPopulation = {
   path: 'unit',
@@ -194,6 +195,19 @@ const createBill = asyncHandler(async (req, res) => {
     throw err;
   }
 
+  try {
+    await recordAudit({
+      actor: req.user,
+      action: 'created',
+      module: 'bill',
+      resourceId: bill._id,
+      resourceLabel: bill.billNo,
+      buildingId: unit.building,
+    });
+  } catch (err) {
+    console.error('Audit log failed:', err.message);
+  }
+
   await bill.populate(billPopulation);
   return sendSuccess(res, bill, 'Bill created successfully', null, 201);
 });
@@ -277,6 +291,20 @@ const updateBill = asyncHandler(async (req, res) => {
   }
 
   const updatedBill = await bill.save();
+
+  try {
+    await recordAudit({
+      actor: req.user,
+      action: 'updated',
+      module: 'bill',
+      resourceId: updatedBill._id,
+      resourceLabel: updatedBill.billNo,
+      buildingId: updatedBill.unit,
+    });
+  } catch (err) {
+    console.error('Audit log failed:', err.message);
+  }
+
   await updatedBill.populate(billPopulation);
   return sendSuccess(res, updatedBill, 'Bill updated successfully');
 });
@@ -310,7 +338,22 @@ const deleteBill = asyncHandler(async (req, res) => {
     throw new ApiError(400, 'Cannot delete bill with existing payments');
   }
 
+  const auditUnit = await Unit.findById(bill.unit).select('building').lean();
+
   await Bill.findByIdAndDelete(id);
+
+  try {
+    await recordAudit({
+      actor: req.user,
+      action: 'deleted',
+      module: 'bill',
+      resourceId: id,
+      resourceLabel: bill.billNo,
+      buildingId: auditUnit ? auditUnit.building : null,
+    });
+  } catch (err) {
+    console.error('Audit log failed:', err.message);
+  }
 
   return sendSuccess(res, null, 'Bill deleted successfully');
 });

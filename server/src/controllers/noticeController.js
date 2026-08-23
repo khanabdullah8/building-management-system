@@ -6,6 +6,7 @@ const { sendSuccess } = require('../utils/apiResponse');
 const asyncHandler = require('../utils/asyncHandler');
 const { hasGlobalAccess, isBuildingAllowed } = require('../utils/scope');
 const { notifyNoticeCreated } = require('../services/notificationService');
+const { record: recordAudit } = require('../services/auditService');
 
 const noticePopulation = {
   path: 'building',
@@ -96,8 +97,10 @@ const createNotice = asyncHandler(async (req, res) => {
     throw new ApiError(400, 'Description must be a string', { description: 'Description must be a string' });
   }
 
-  if (buildingId !== undefined && buildingId !== null) {
-    await validateBuilding(buildingId);
+  const noticeBuilding =
+    buildingId !== undefined && buildingId !== null ? await validateBuilding(buildingId) : null;
+
+  if (noticeBuilding) {
     if (!isBuildingAllowed(req.scope.buildingIds, buildingId)) {
       throw new ApiError(403, 'Forbidden: insufficient permissions');
     }
@@ -121,6 +124,21 @@ const createNotice = asyncHandler(async (req, res) => {
   };
 
   const notice = await Notice.create(noticeData);
+
+  try {
+    await recordAudit({
+      actor: req.user,
+      action: 'created',
+      module: 'notice',
+      resourceId: notice._id,
+      resourceLabel: notice.title,
+      buildingId: noticeBuilding ? noticeBuilding._id : null,
+      buildingName: noticeBuilding ? noticeBuilding.name || noticeBuilding.code : '',
+    });
+  } catch (err) {
+    console.error('Audit log failed:', err.message);
+  }
+
   await notice.populate(noticePopulation);
 
   // Fan-out must never break the primary operation (no transactions in this
@@ -209,6 +227,20 @@ const updateNotice = asyncHandler(async (req, res) => {
   }
 
   const updatedNotice = await notice.save();
+
+  try {
+    await recordAudit({
+      actor: req.user,
+      action: 'updated',
+      module: 'notice',
+      resourceId: updatedNotice._id,
+      resourceLabel: updatedNotice.title,
+      buildingId: updatedNotice.building,
+    });
+  } catch (err) {
+    console.error('Audit log failed:', err.message);
+  }
+
   await updatedNotice.populate(noticePopulation);
   return sendSuccess(res, updatedNotice, 'Notice updated successfully');
 });
@@ -230,6 +262,20 @@ const deleteNotice = asyncHandler(async (req, res) => {
   }
 
   await Notice.findByIdAndDelete(id);
+
+  try {
+    await recordAudit({
+      actor: req.user,
+      action: 'deleted',
+      module: 'notice',
+      resourceId: id,
+      resourceLabel: notice.title,
+      buildingId: notice.building,
+    });
+  } catch (err) {
+    console.error('Audit log failed:', err.message);
+  }
+
   return sendSuccess(res, null, 'Notice deleted successfully');
 });
 

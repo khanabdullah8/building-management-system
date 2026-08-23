@@ -6,6 +6,7 @@ const ApiError = require('../utils/ApiError');
 const { sendSuccess } = require('../utils/apiResponse');
 const asyncHandler = require('../utils/asyncHandler');
 const { isBuildingAllowed, unitScopeFilter } = require('../utils/scope');
+const { record: recordAudit } = require('../services/auditService');
 
 const paymentPopulation = {
   path: 'bill',
@@ -287,6 +288,21 @@ const createPayment = asyncHandler(async (req, res) => {
     throw err;
   }
 
+  const auditUnit = await Unit.findById(bill.unit).select('building').lean();
+
+  try {
+    await recordAudit({
+      actor: req.user,
+      action: 'created',
+      module: 'payment',
+      resourceId: payment._id,
+      resourceLabel: payment.paymentNo,
+      buildingId: auditUnit ? auditUnit.building : null,
+    });
+  } catch (err) {
+    console.error('Audit log failed:', err.message);
+  }
+
   await recalculateBillStatus(billId);
   await payment.populate(paymentPopulation);
   return sendSuccess(res, payment, 'Payment recorded successfully', null, 201);
@@ -376,7 +392,24 @@ const updatePayment = asyncHandler(async (req, res) => {
     payment.notes = notes.trim();
   }
 
+  const auditBill = await Bill.findById(payment.bill).select('unit').lean();
+  const auditUnit = auditBill ? await Unit.findById(auditBill.unit).select('building').lean() : null;
+
   await payment.save();
+
+  try {
+    await recordAudit({
+      actor: req.user,
+      action: 'updated',
+      module: 'payment',
+      resourceId: payment._id,
+      resourceLabel: payment.paymentNo,
+      buildingId: auditUnit ? auditUnit.building : null,
+    });
+  } catch (err) {
+    console.error('Audit log failed:', err.message);
+  }
+
   await recalculateBillStatus(payment.bill);
   await payment.populate(paymentPopulation);
   return sendSuccess(res, payment, 'Payment updated successfully');
@@ -414,7 +447,25 @@ const deletePayment = asyncHandler(async (req, res) => {
   }
 
   const billId = payment.bill;
+
+  const auditBill = await Bill.findById(payment.bill).select('unit').lean();
+  const auditUnit = auditBill ? await Unit.findById(auditBill.unit).select('building').lean() : null;
+
   await Payment.findByIdAndDelete(id);
+
+  try {
+    await recordAudit({
+      actor: req.user,
+      action: 'deleted',
+      module: 'payment',
+      resourceId: id,
+      resourceLabel: payment.paymentNo,
+      buildingId: auditUnit ? auditUnit.building : null,
+    });
+  } catch (err) {
+    console.error('Audit log failed:', err.message);
+  }
+
   await recalculateBillStatus(billId);
 
   return sendSuccess(res, null, 'Payment deleted successfully');
