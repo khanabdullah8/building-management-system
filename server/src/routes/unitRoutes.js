@@ -6,16 +6,17 @@ const {
   updateUnit,
   deleteUnit,
 } = require('../controllers/unitController');
+const { authorize } = require('../middlewares/auth');
 
 const router = express.Router();
 
 router.route('/')
   .get(getUnits)
-  .post(createUnit);
+  .post(authorize('admin', 'staff'), createUnit);
 
 router.route('/:id')
   .get(getUnitById)
-  .patch(updateUnit)
-  .delete(deleteUnit);
+  .patch(authorize('admin', 'staff'), updateUnit)
+  .delete(authorize('admin', 'staff'), deleteUnit);
 
 module.exports = router;

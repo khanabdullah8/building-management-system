@@ -6,16 +6,17 @@ const {
   updateExpense,
   deleteExpense,
 } = require('../controllers/expenseController');
+const { authorize } = require('../middlewares/auth');
 
 const router = express.Router();
 
 router.route('/')
   .get(getExpenses)
-  .post(createExpense);
+  .post(authorize('admin', 'staff'), createExpense);
 
 router.route('/:id')
   .get(getExpenseById)
-  .patch(updateExpense)
-  .delete(deleteExpense);
+  .patch(authorize('admin', 'staff'), updateExpense)
+  .delete(authorize('admin', 'staff'), deleteExpense);
 
 module.exports = router;

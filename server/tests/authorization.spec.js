@@ -13,6 +13,7 @@ const Visitor = require('../src/models/Visitor');
 const Complaint = require('../src/models/Complaint');
 const Bill = require('../src/models/Bill');
 const Payment = require('../src/models/Payment');
+const Expense = require('../src/models/Expense');
 const { startMemoryDb, stopMemoryDb } = require('./helpers/db');
 const { getAuthToken } = require('./helpers/auth');
 
@@ -731,6 +732,185 @@ describe('Building-scoped Authorization (Phase 16)', () => {
         .send({ unit: unitB1._id.toString(), period: '2026-hack', amount: 100 });
 
       expect(res.status).toBe(403);
+    });
+  });
+
+  describe('Phase 22: Resident read-only for buildings/units/expenses', () => {
+    let expenseInA;
+    const originalBuildingName = 'Building A';
+
+    beforeAll(async () => {
+      expenseInA = await Expense.create({
+        category: 'maintenance',
+        building: buildingA._id,
+        description: 'Phase22 fixture',
+        amount: 100,
+        status: 'pending',
+      });
+      buildingA.name = originalBuildingName;
+      await buildingA.save();
+    });
+
+    afterAll(async () => {
+      await Expense.deleteMany({ _id: expenseInA._id });
+    });
+
+    it('resident cannot create a unit (403) and DB is unchanged', async () => {
+      const before = await Unit.countDocuments({ building: buildingA._id });
+      const token = getAuthToken(residentUser);
+      const res = await request(app)
+        .post('/api/v1/units')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ unitNumber: 'RES-HACK-1', building: buildingA._id.toString(), type: '1BHK', floor: 5, status: 'vacant' });
+      expect(res.status).toBe(403);
+      const after = await Unit.countDocuments({ building: buildingA._id });
+      expect(after).toBe(before);
+    });
+
+    it('resident cannot update a unit (403)', async () => {
+      const token = getAuthToken(residentUser);
+      const res = await request(app)
+        .patch(`/api/v1/units/${unitA1._id}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ type: '4BHK' });
+      expect(res.status).toBe(403);
+    });
+
+    it('resident cannot delete a unit (403) and DB is unchanged', async () => {
+      const before = await Unit.countDocuments({ building: buildingA._id });
+      const token = getAuthToken(residentUser);
+      const res = await request(app)
+        .delete(`/api/v1/units/${unitA1._id}`)
+        .set('Authorization', `Bearer ${token}`);
+      expect(res.status).toBe(403);
+      expect(await Unit.countDocuments({ building: buildingA._id })).toBe(before);
+    });
+
+    it('resident cannot create an expense (403) and DB is unchanged', async () => {
+      const before = await Expense.countDocuments({ building: buildingA._id });
+      const token = getAuthToken(residentUser);
+      const res = await request(app)
+        .post('/api/v1/expenses')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ category: 'utilities', building: buildingA._id.toString(), amount: 999 });
+      expect(res.status).toBe(403);
+      expect(await Expense.countDocuments({ building: buildingA._id })).toBe(before);
+    });
+
+    it('resident cannot update an expense (403)', async () => {
+      const token = getAuthToken(residentUser);
+      const res = await request(app)
+        .patch(`/api/v1/expenses/${expenseInA._id}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ amount: 99999 });
+      expect(res.status).toBe(403);
+    });
+
+    it('resident cannot delete an expense (403) and DB is unchanged', async () => {
+      const token = getAuthToken(residentUser);
+      const res = await request(app)
+        .delete(`/api/v1/expenses/${expenseInA._id}`)
+        .set('Authorization', `Bearer ${token}`);
+      expect(res.status).toBe(403);
+      expect(await Expense.findById(expenseInA._id)).not.toBeNull();
+    });
+
+    it('resident cannot update a building (403) and DB is unchanged', async () => {
+      const token = getAuthToken(residentUser);
+      const res = await request(app)
+        .patch(`/api/v1/buildings/${buildingA._id}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ name: 'Hacked Building' });
+      expect(res.status).toBe(403);
+      const reloaded = await Building.findById(buildingA._id);
+      expect(reloaded.name).toBe(originalBuildingName);
+    });
+
+    it('staff can still create a unit in assigned building (201)', async () => {
+      const token = getAuthToken(staffUserWithBuildings);
+      const res = await request(app)
+        .post('/api/v1/units')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ unitNumber: 'STAFF-OK-22', building: buildingA._id.toString(), type: '1BHK', floor: 2, status: 'vacant' });
+      expect(res.status).toBe(201);
+      await Unit.findByIdAndDelete(res.body.data.id);
+    });
+
+    it('staff cannot update an unassigned building (403)', async () => {
+      const token = getAuthToken(staffUserWithBuildings);
+      const res = await request(app)
+        .patch(`/api/v1/buildings/${buildingB._id}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ name: 'Hacked' });
+      expect(res.status).toBe(403);
+    });
+
+    it('staff can create an expense in assigned building (201)', async () => {
+      const token = getAuthToken(staffUserWithBuildings);
+      const res = await request(app)
+        .post('/api/v1/expenses')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ category: 'security', building: buildingA._id.toString(), amount: 250 });
+      expect(res.status).toBe(201);
+      await Expense.findByIdAndDelete(res.body.data.id);
+    });
+
+    it('admin can update a building (200)', async () => {
+      const token = getAuthToken(adminUser);
+      const res = await request(app)
+        .patch(`/api/v1/buildings/${buildingA._id}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ name: originalBuildingName });
+      expect(res.status).toBe(200);
+    });
+
+    it('admin can create/update/delete expense (201/200/200)', async () => {
+      const token = getAuthToken(adminUser);
+      const created = await request(app)
+        .post('/api/v1/expenses')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ category: 'admin', building: buildingA._id.toString(), amount: 500 });
+      expect(created.status).toBe(201);
+      const expId = created.body.data.id;
+      const updated = await request(app)
+        .patch(`/api/v1/expenses/${expId}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ amount: 600 });
+      expect(updated.status).toBe(200);
+      const deleted = await request(app)
+        .delete(`/api/v1/expenses/${expId}`)
+        .set('Authorization', `Bearer ${token}`);
+      expect(deleted.status).toBe(200);
+    });
+
+    it('regression: resident can still create maintenance for own unit (201)', async () => {
+      const token = getAuthToken(residentUser);
+      const res = await request(app)
+        .post('/api/v1/maintenance')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ title: 'Phase22 maint', unit: unitA1._id.toString(), priority: 'medium', status: 'open' });
+      expect(res.status).toBe(201);
+      await Maintenance.findByIdAndDelete(res.body.data.id);
+    });
+
+    it('regression: resident can still create visitor for own unit (201)', async () => {
+      const token = getAuthToken(residentUser);
+      const res = await request(app)
+        .post('/api/v1/visitors')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ name: 'Phase22 visitor', unit: unitA1._id.toString(), purpose: 'Delivery' });
+      expect(res.status).toBe(201);
+      await Visitor.findByIdAndDelete(res.body.data.id);
+    });
+
+    it('regression: resident can still create complaint for own unit (201)', async () => {
+      const token = getAuthToken(residentUser);
+      const res = await request(app)
+        .post('/api/v1/complaints')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ subject: 'Phase22 complaint', unit: unitA1._id.toString(), priority: 'medium', status: 'open' });
+      expect(res.status).toBe(201);
+      await Complaint.findByIdAndDelete(res.body.data.id);
     });
   });
 

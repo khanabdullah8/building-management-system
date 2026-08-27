@@ -16,4 +16,20 @@ function createRateLimiter(overrides = {}) {
   });
 }
 
-module.exports = { createRateLimiter };
+function createLoginLimiter(overrides = {}) {
+  const windowMs = Number(overrides.windowMs) || Number(process.env.LOGIN_RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000;
+  const max = Number(overrides.max) || Number(process.env.LOGIN_RATE_LIMIT_MAX) || 7;
+
+  return rateLimit({
+    windowMs,
+    max,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: {
+      success: false,
+      message: 'Too many login attempts, please try again later.',
+    },
+  });
+}
+
+module.exports = { createRateLimiter, createLoginLimiter };
