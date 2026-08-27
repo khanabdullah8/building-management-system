@@ -6,6 +6,7 @@ const { sendSuccess } = require('../utils/apiResponse');
 const asyncHandler = require('../utils/asyncHandler');
 const { hasGlobalAccess, isBuildingAllowed } = require('../utils/scope');
 const { record: recordAudit } = require('../services/auditService');
+const { getPagination, paginationMeta } = require('../utils/pagination');
 
 const expensePopulation = { path: 'building', select: 'name code' };
 
@@ -27,35 +28,37 @@ const validateBuilding = async (buildingId) => {
 const getExpenses = asyncHandler(async (req, res) => {
   const { search, building, status, category } = req.query;
   const { buildingIds } = req.scope;
+  const { page, limit, skip } = getPagination(req.query);
   const filter = {};
+  const emptyResult = () => sendSuccess(res, [], null, paginationMeta(page, limit, 0));
 
   if (buildingIds === null) {
   } else if (!buildingIds || buildingIds.length === 0) {
-    return sendSuccess(res, []);
+    return emptyResult();
   } else {
     filter.building = { $in: buildingIds.map((id) => new mongoose.Types.ObjectId(id)) };
   }
 
   if (building) {
     if (!mongoose.Types.ObjectId.isValid(building)) {
-      return sendSuccess(res, []);
+      return emptyResult();
     }
     if (!isBuildingAllowed(req.scope.buildingIds, building)) {
-      return sendSuccess(res, []);
+      return emptyResult();
     }
     filter.building = building;
   }
 
   if (status) {
     if (!VALID_STATUSES.includes(status)) {
-      return sendSuccess(res, []);
+      return emptyResult();
     }
     filter.status = status;
   }
 
   if (category) {
     if (!VALID_CATEGORIES.includes(category)) {
-      return sendSuccess(res, []);
+      return emptyResult();
     }
     filter.category = category;
   }
@@ -70,11 +73,14 @@ const getExpenses = asyncHandler(async (req, res) => {
     ];
   }
 
+  const total = await Expense.countDocuments(filter);
   const expenses = await Expense.find(filter)
     .populate(expensePopulation)
-    .sort({ date: -1 });
+    .sort({ date: -1 })
+    .limit(limit)
+    .skip(skip);
 
-  return sendSuccess(res, expenses);
+  return sendSuccess(res, expenses, null, paginationMeta(page, limit, total));
 });
 
 const getExpenseById = asyncHandler(async (req, res) => {

@@ -7,14 +7,21 @@ import ErrorState from '../../components/ui/ErrorState'
 import DataTable from '../../components/ui/DataTable'
 import Badge from '../../components/ui/Badge'
 import Modal from '../../components/ui/Modal'
+import Pagination from '../../components/ui/Pagination'
 import http from '../../api/http'
 import { statusTone } from '../../utils/status'
+import { buildListParams } from '../../utils/queryParams'
 import BuildingModal from './BuildingModal'
 import '../../components/common/ModulePage.css'
+
+const PAGE_SIZE = 20
 
 function BuildingsPage() {
   const [buildings, setBuildings] = useState([])
   const [query, setQuery] = useState('')
+  const [page, setPage] = useState(1)
+  const [totalPages, setTotalPages] = useState(0)
+  const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [notice, setNotice] = useState(null)
@@ -23,12 +30,10 @@ function BuildingsPage() {
   const [deleting, setDeleting] = useState(false)
   const requestId = useRef(0)
 
-  const fetchBuildings = useCallback(async (searchTerm = query) => {
+  const fetchBuildings = useCallback(async (searchTerm, pageNumber) => {
     const currentRequest = ++requestId.current
-    const trimmedSearch = searchTerm.trim()
-    const url = trimmedSearch
-      ? `/v1/buildings?search=${encodeURIComponent(trimmedSearch)}`
-      : '/v1/buildings'
+    const qs = buildListParams({ page: pageNumber, limit: PAGE_SIZE, search: searchTerm })
+    const url = `/v1/buildings${qs ? `?${qs}` : ''}`
 
     setLoading(true)
     setError(null)
@@ -36,6 +41,8 @@ function BuildingsPage() {
       const response = await http.get(url)
       if (currentRequest === requestId.current) {
         setBuildings(response.data?.data || [])
+        setTotalPages(response.data?.meta?.totalPages || 0)
+        setTotal(response.data?.meta?.total || 0)
       }
     } catch (err) {
       if (currentRequest === requestId.current) {
@@ -46,20 +53,27 @@ function BuildingsPage() {
         setLoading(false)
       }
     }
-  }, [query])
+  }, [])
 
   useEffect(() => {
     const timer = setTimeout(() => {
-      fetchBuildings(query)
+      setPage(1)
+      fetchBuildings(query, 1)
     }, query.trim() ? 300 : 0)
 
     return () => clearTimeout(timer)
   }, [query, fetchBuildings])
 
+  const handlePageChange = (nextPage) => {
+    if (nextPage < 1 || nextPage > totalPages) return
+    setPage(nextPage)
+    fetchBuildings(query, nextPage)
+  }
+
   const handleModalSuccess = async (message) => {
     setEditingBuilding(null)
     setNotice({ type: 'success', message })
-    await fetchBuildings(query)
+    await fetchBuildings(query, page)
   }
 
   const handleDelete = async () => {
@@ -71,7 +85,7 @@ function BuildingsPage() {
       await http.delete(`/v1/buildings/${buildingToDelete.id}`)
       setBuildingToDelete(null)
       setNotice({ type: 'success', message: 'Building deleted successfully.' })
-      await fetchBuildings(query)
+      await fetchBuildings(query, page)
     } catch (err) {
       setNotice({
         type: 'error',
@@ -110,7 +124,7 @@ function BuildingsPage() {
 
   const renderBody = () => {
     if (loading) return <Spinner label="Loading buildings…" />
-    if (error) return <ErrorState message={error} onRetry={() => fetchBuildings(query)} />
+    if (error) return <ErrorState message={error} onRetry={() => fetchBuildings(query, page)} />
     if (buildings.length === 0) {
       return (
         <EmptyState
@@ -148,6 +162,14 @@ function BuildingsPage() {
         <SearchInput value={query} onChange={setQuery} placeholder="Search buildings…" />
       </div>
       <div className="module-body">{renderBody()}</div>
+
+      <Pagination
+        page={page}
+        totalPages={totalPages}
+        total={total}
+        limit={PAGE_SIZE}
+        onPageChange={handlePageChange}
+      />
 
       {editingBuilding && (
         <BuildingModal

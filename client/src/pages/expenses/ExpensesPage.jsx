@@ -7,15 +7,22 @@ import ErrorState from '../../components/ui/ErrorState'
 import DataTable from '../../components/ui/DataTable'
 import Badge from '../../components/ui/Badge'
 import Modal from '../../components/ui/Modal'
+import Pagination from '../../components/ui/Pagination'
 import http from '../../api/http'
 import { statusTone } from '../../utils/status'
 import { formatCurrency, formatDate } from '../../utils/formatters'
+import { buildListParams } from '../../utils/queryParams'
 import ExpenseModal from './ExpenseModal'
 import './ExpensesPage.css'
+
+const PAGE_SIZE = 20
 
 function ExpensesPage() {
   const [expenses, setExpenses] = useState([])
   const [query, setQuery] = useState('')
+  const [page, setPage] = useState(1)
+  const [totalPages, setTotalPages] = useState(0)
+  const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [notice, setNotice] = useState(null)
@@ -40,16 +47,15 @@ function ExpensesPage() {
     return () => { isMounted = false }
   }, [])
 
-  const fetchExpenses = useCallback(async (searchTerm = query) => {
+  const fetchExpenses = useCallback(async (searchTerm, pageNumber) => {
     const currentRequest = ++requestId.current
-    const trimmedSearch = searchTerm.trim()
-    const params = new URLSearchParams()
-    if (trimmedSearch) params.set('search', trimmedSearch)
-    if (buildingFilter) params.set('building', buildingFilter)
-    if (statusFilter) params.set('status', statusFilter)
-    if (categoryFilter) params.set('category', categoryFilter)
-    const qs = params.toString()
-    const url = qs ? `/v1/expenses?${qs}` : '/v1/expenses'
+    const qs = buildListParams({
+      page: pageNumber,
+      limit: PAGE_SIZE,
+      search: searchTerm,
+      filters: { building: buildingFilter, status: statusFilter, category: categoryFilter },
+    })
+    const url = `/v1/expenses${qs ? `?${qs}` : ''}`
 
     setLoading(true)
     setError(null)
@@ -57,6 +63,8 @@ function ExpensesPage() {
       const response = await http.get(url)
       if (currentRequest === requestId.current) {
         setExpenses(response.data?.data || [])
+        setTotalPages(response.data?.meta?.totalPages || 0)
+        setTotal(response.data?.meta?.total || 0)
       }
     } catch (err) {
       if (currentRequest === requestId.current) {
@@ -67,20 +75,27 @@ function ExpensesPage() {
         setLoading(false)
       }
     }
-  }, [query, buildingFilter, statusFilter, categoryFilter])
+  }, [buildingFilter, statusFilter, categoryFilter])
 
   useEffect(() => {
     const timer = setTimeout(() => {
-      fetchExpenses(query)
+      setPage(1)
+      fetchExpenses(query, 1)
     }, query.trim() ? 300 : 0)
 
     return () => clearTimeout(timer)
-  }, [query, fetchExpenses])
+  }, [query, buildingFilter, statusFilter, categoryFilter, fetchExpenses])
+
+  const handlePageChange = (nextPage) => {
+    if (nextPage < 1 || nextPage > totalPages) return
+    setPage(nextPage)
+    fetchExpenses(query, nextPage)
+  }
 
   const handleModalSuccess = async (message) => {
     setEditingExpense(null)
     setNotice({ type: 'success', message })
-    await fetchExpenses(query)
+    await fetchExpenses(query, page)
   }
 
   const handleDelete = async () => {
@@ -92,7 +107,7 @@ function ExpensesPage() {
       await http.delete(`/v1/expenses/${expenseToDelete.id}`)
       setExpenseToDelete(null)
       setNotice({ type: 'success', message: 'Expense deleted successfully.' })
-      await fetchExpenses(query)
+      await fetchExpenses(query, page)
     } catch (err) {
       setNotice({ type: 'error', message: err.message || 'Failed to delete expense. Please try again.' })
     } finally {
@@ -140,7 +155,7 @@ function ExpensesPage() {
 
   const renderBody = () => {
     if (loading) return <Spinner label="Loading expenses…" />
-    if (error) return <ErrorState message={error} onRetry={() => fetchExpenses(query)} />
+    if (error) return <ErrorState message={error} onRetry={() => fetchExpenses(query, page)} />
     if (expenses.length === 0) {
       return (
         <EmptyState
@@ -220,6 +235,14 @@ function ExpensesPage() {
         </select>
       </div>
       <div className="module-body">{renderBody()}</div>
+
+      <Pagination
+        page={page}
+        totalPages={totalPages}
+        total={total}
+        limit={PAGE_SIZE}
+        onPageChange={handlePageChange}
+      />
 
       {editingExpense && (
         <ExpenseModal

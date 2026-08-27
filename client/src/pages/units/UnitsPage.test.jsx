@@ -71,7 +71,7 @@ describe('UnitsPage CRUD functionality', () => {
     await user.click(screen.getByRole('button', { name: 'Try again' }))
 
     expect(await screen.findByText('A-101')).toBeInTheDocument()
-    expect(http.get).toHaveBeenCalledWith('/v1/units')
+    expect(http.get).toHaveBeenCalledWith('/v1/units?page=1&limit=20')
   })
 
   it('sends a server-side search request and restores the full list when cleared', async () => {
@@ -80,10 +80,10 @@ describe('UnitsPage CRUD functionality', () => {
 
     await screen.findByText('A-101')
     await user.type(screen.getByRole('searchbox'), 'A-101')
-    await waitFor(() => expect(http.get).toHaveBeenCalledWith('/v1/units?search=A-101'))
+    await waitFor(() => expect(http.get).toHaveBeenCalledWith('/v1/units?page=1&limit=20&search=A-101'))
 
     await user.clear(screen.getByRole('searchbox'))
-    await waitFor(() => expect(http.get).toHaveBeenLastCalledWith('/v1/units'))
+    await waitFor(() => expect(http.get).toHaveBeenLastCalledWith('/v1/units?page=1&limit=20'))
   })
 
   it('shows no-units and no-search-results empty states', async () => {
@@ -100,7 +100,7 @@ describe('UnitsPage CRUD functionality', () => {
 
     await screen.findByText('A-101')
     http.get.mockImplementation((url) => {
-      if (url === '/v1/units?search=unknown') return Promise.resolve({ data: { success: true, data: [] } })
+      if (url === '/v1/units?page=1&limit=20&search=unknown') return Promise.resolve({ data: { success: true, data: [] } })
       if (url === '/v1/buildings') return Promise.resolve({ data: { success: true, data: mockBuildings } })
       return Promise.resolve({ data: { success: true, data: mockUnits } })
     })

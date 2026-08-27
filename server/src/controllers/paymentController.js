@@ -7,6 +7,7 @@ const { sendSuccess } = require('../utils/apiResponse');
 const asyncHandler = require('../utils/asyncHandler');
 const { isBuildingAllowed, unitScopeFilter } = require('../utils/scope');
 const { record: recordAudit } = require('../services/auditService');
+const { getPagination, paginationMeta } = require('../utils/pagination');
 
 const paymentPopulation = {
   path: 'bill',
@@ -76,12 +77,14 @@ const generateUniquePaymentNo = async () => {
 const getPayments = asyncHandler(async (req, res) => {
   const { search, bill, building, status, method, dateFrom, dateTo } = req.query;
   const { buildingIds, unitId } = req.scope;
+  const { page, limit, skip } = getPagination(req.query);
   const filter = {};
+  const emptyResult = () => sendSuccess(res, [], null, paginationMeta(page, limit, 0));
 
   if (req.user.role === 'resident') {
     if (unitId) {
       const billIds = await Bill.find({ unit: new mongoose.Types.ObjectId(unitId) }).select('_id');
-      if (billIds.length === 0) return sendSuccess(res, []);
+      if (billIds.length === 0) return emptyResult();
       filter.bill = { $in: billIds.map((b) => b._id) };
     } else {
       filter._id = { $in: [] };
@@ -92,14 +95,14 @@ const getPayments = asyncHandler(async (req, res) => {
       filter._id = { $in: [] };
     } else if (Object.keys(sf).length > 0) {
       const billIds = await Bill.find({ unit: sf.unit }).select('_id');
-      if (billIds.length === 0) return sendSuccess(res, []);
+      if (billIds.length === 0) return emptyResult();
       filter.bill = { $in: billIds.map((b) => b._id) };
     }
   }
 
   if (bill) {
     if (!mongoose.Types.ObjectId.isValid(bill)) {
-      return sendSuccess(res, []);
+      return emptyResult();
     }
     if (filter.bill && filter.bill.$in) {
       filter.bill = { $in: [...filter.bill.$in, new mongoose.Types.ObjectId(bill)] };
@@ -110,28 +113,28 @@ const getPayments = asyncHandler(async (req, res) => {
 
   if (building && req.user.role !== 'resident') {
     if (!mongoose.Types.ObjectId.isValid(building)) {
-      return sendSuccess(res, []);
+      return emptyResult();
     }
     if (buildingIds !== null && !isBuildingAllowed(buildingIds, building)) {
-      return sendSuccess(res, []);
+      return emptyResult();
     }
     const unitIds = await Unit.find({ building }).select('_id');
-    if (unitIds.length === 0) return sendSuccess(res, []);
+    if (unitIds.length === 0) return emptyResult();
     const billIds = await Bill.find({ unit: { $in: unitIds.map((u) => u._id) } }).select('_id');
-    if (billIds.length === 0) return sendSuccess(res, []);
+    if (billIds.length === 0) return emptyResult();
     filter.bill = { $in: billIds.map((b) => b._id) };
   }
 
   if (status) {
     if (!VALID_STATUSES.includes(status)) {
-      return sendSuccess(res, []);
+      return emptyResult();
     }
     filter.status = status;
   }
 
   if (method) {
     if (!VALID_METHODS.includes(method)) {
-      return sendSuccess(res, []);
+      return emptyResult();
     }
     filter.method = method;
   }
@@ -163,11 +166,14 @@ const getPayments = asyncHandler(async (req, res) => {
     ];
   }
 
+  const total = await Payment.countDocuments(filter);
   const payments = await Payment.find(filter)
     .populate(paymentPopulation)
-    .sort({ paidAt: -1 });
+    .sort({ paidAt: -1 })
+    .limit(limit)
+    .skip(skip);
 
-  return sendSuccess(res, payments);
+  return sendSuccess(res, payments, null, paginationMeta(page, limit, total));
 });
 
 const getPaymentById = asyncHandler(async (req, res) => {

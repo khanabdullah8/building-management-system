@@ -5,15 +5,17 @@ const { sendSuccess } = require('../utils/apiResponse');
 const asyncHandler = require('../utils/asyncHandler');
 const { hasGlobalAccess, isBuildingAllowed } = require('../utils/scope');
 const { record: recordAudit } = require('../services/auditService');
+const { getPagination, paginationMeta } = require('../utils/pagination');
 
 const getBuildings = asyncHandler(async (req, res) => {
   const { search, status } = req.query;
   const { buildingIds } = req.scope;
+  const { page, limit, skip } = getPagination(req.query);
   const filter = {};
 
   if (buildingIds !== null) {
     if (!buildingIds || buildingIds.length === 0) {
-      return sendSuccess(res, []);
+      return sendSuccess(res, [], null, paginationMeta(page, limit, 0));
     }
     filter._id = { $in: buildingIds.map((id) => new mongoose.Types.ObjectId(id)) };
   }
@@ -31,9 +33,10 @@ const getBuildings = asyncHandler(async (req, res) => {
     ];
   }
 
-  const buildings = await Building.find(filter).sort({ createdAt: -1 });
+  const total = await Building.countDocuments(filter);
+  const buildings = await Building.find(filter).sort({ createdAt: -1 }).limit(limit).skip(skip);
 
-  return sendSuccess(res, buildings);
+  return sendSuccess(res, buildings, null, paginationMeta(page, limit, total));
 });
 
 const getBuildingById = asyncHandler(async (req, res) => {

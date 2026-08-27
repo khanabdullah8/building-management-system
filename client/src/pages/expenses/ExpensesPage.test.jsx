@@ -108,7 +108,7 @@ describe('ExpensesPage CRUD functionality', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Unable to reach the server')
     await user.click(screen.getByRole('button', { name: 'Try again' }))
     expect(await screen.findByText('Electricity bill')).toBeInTheDocument()
-    expect(http.get).toHaveBeenCalledWith('/v1/expenses')
+    expect(http.get).toHaveBeenCalledWith('/v1/expenses?page=1&limit=20')
   })
 
   it('uses server-side search and restores the full list when cleared', async () => {
@@ -117,9 +117,9 @@ describe('ExpensesPage CRUD functionality', () => {
 
     await screen.findByText('Electricity bill')
     await user.type(screen.getByRole('searchbox'), 'electricity')
-    await waitFor(() => expect(http.get).toHaveBeenCalledWith('/v1/expenses?search=electricity'))
+    await waitFor(() => expect(http.get).toHaveBeenCalledWith('/v1/expenses?page=1&limit=20&search=electricity'))
     await user.clear(screen.getByRole('searchbox'))
-    await waitFor(() => expect(http.get).toHaveBeenLastCalledWith('/v1/expenses'))
+    await waitFor(() => expect(http.get).toHaveBeenLastCalledWith('/v1/expenses?page=1&limit=20'))
   })
 
   it('shows empty state when no expenses exist', async () => {
@@ -134,7 +134,7 @@ describe('ExpensesPage CRUD functionality', () => {
     renderPage()
     await screen.findByText('Electricity bill')
     http.get.mockImplementation((url) => {
-      if (url === '/v1/expenses?search=unknown') return Promise.resolve({ data: { success: true, data: [] } })
+      if (url === '/v1/expenses?page=1&limit=20&search=unknown') return Promise.resolve({ data: { success: true, data: [] } })
       if (url === '/v1/buildings') return Promise.resolve({ data: { success: true, data: buildings } })
       return Promise.resolve({ data: { success: true, data: expenses } })
     })
@@ -147,7 +147,7 @@ describe('ExpensesPage CRUD functionality', () => {
     renderPage()
     await screen.findByText('Electricity bill')
     await user.selectOptions(screen.getByLabelText('Filter by building'), 'building-1')
-    await waitFor(() => expect(http.get).toHaveBeenCalledWith('/v1/expenses?building=building-1'))
+    await waitFor(() => expect(http.get).toHaveBeenCalledWith('/v1/expenses?page=1&limit=20&building=building-1'))
   })
 
   it('filters by status using the toolbar dropdown', async () => {
@@ -155,7 +155,7 @@ describe('ExpensesPage CRUD functionality', () => {
     renderPage()
     await screen.findByText('Electricity bill')
     await user.selectOptions(screen.getByLabelText('Filter by status'), 'pending')
-    await waitFor(() => expect(http.get).toHaveBeenCalledWith('/v1/expenses?status=pending'))
+    await waitFor(() => expect(http.get).toHaveBeenCalledWith('/v1/expenses?page=1&limit=20&status=pending'))
   })
 
   it('filters by category using the toolbar dropdown', async () => {
@@ -163,7 +163,7 @@ describe('ExpensesPage CRUD functionality', () => {
     renderPage()
     await screen.findByText('Electricity bill')
     await user.selectOptions(screen.getByLabelText('Filter by category'), 'utilities')
-    await waitFor(() => expect(http.get).toHaveBeenCalledWith('/v1/expenses?category=utilities'))
+    await waitFor(() => expect(http.get).toHaveBeenCalledWith('/v1/expenses?page=1&limit=20&category=utilities'))
   })
 
   it('opens Add Expense modal and loads Building options', async () => {

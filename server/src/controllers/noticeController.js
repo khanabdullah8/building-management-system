@@ -7,6 +7,7 @@ const asyncHandler = require('../utils/asyncHandler');
 const { hasGlobalAccess, isBuildingAllowed } = require('../utils/scope');
 const { notifyNoticeCreated } = require('../services/notificationService');
 const { record: recordAudit } = require('../services/auditService');
+const { getPagination, paginationMeta } = require('../utils/pagination');
 
 const noticePopulation = {
   path: 'building',
@@ -28,6 +29,7 @@ const validateBuilding = async (buildingId) => {
 const getNotices = asyncHandler(async (req, res) => {
   const { search, building } = req.query;
   const { buildingIds } = req.scope;
+  const { page, limit, skip } = getPagination(req.query);
   const filter = {};
 
   if (search) {
@@ -41,10 +43,10 @@ const getNotices = asyncHandler(async (req, res) => {
 
   if (building) {
     if (!mongoose.Types.ObjectId.isValid(building)) {
-      return sendSuccess(res, []);
+      return sendSuccess(res, [], null, paginationMeta(page, limit, 0));
     }
     if (buildingIds !== null && !isBuildingAllowed(buildingIds, building)) {
-      return sendSuccess(res, []);
+      return sendSuccess(res, [], null, paginationMeta(page, limit, 0));
     }
     filter.building = building;
   } else if (buildingIds !== null) {
@@ -54,11 +56,14 @@ const getNotices = asyncHandler(async (req, res) => {
     ];
   }
 
+  const total = await Notice.countDocuments(filter);
   const notices = await Notice.find(filter)
     .populate(noticePopulation)
-    .sort({ publishedAt: -1 });
+    .sort({ publishedAt: -1 })
+    .limit(limit)
+    .skip(skip);
 
-  return sendSuccess(res, notices);
+  return sendSuccess(res, notices, null, paginationMeta(page, limit, total));
 });
 
 const getNoticeById = asyncHandler(async (req, res) => {

@@ -221,6 +221,29 @@ describe('Residents API (/api/v1/residents)', () => {
       expect(literalDot.status).toBe(200);
       expect(literalDot.body.data).toHaveLength(0);
     });
+
+    it('returns pagination metadata alongside the residents array', async () => {
+      const res = await authRequest(app, authToken).get('/api/v1/residents');
+
+      expect(Array.isArray(res.body.data)).toBe(true);
+      expect(res.body.meta).toEqual({ page: 1, limit: 20, total: 0, totalPages: 0 });
+    });
+
+    it('paginates residents with page and limit and reports total', async () => {
+      await Resident.create([
+        { ...validPayload(), name: 'Pag One', phone: '100' },
+        { ...validPayload(), name: 'Pag Two', phone: '200' },
+        { ...validPayload(), name: 'Pag Three', phone: '300' },
+        { ...validPayload(), name: 'Pag Four', phone: '400' },
+        { ...validPayload(), name: 'Pag Five', phone: '500' },
+      ]);
+
+      const res = await authRequest(app, authToken).get('/api/v1/residents?page=2&limit=2');
+
+      expect(res.status).toBe(200);
+      expect(res.body.data).toHaveLength(2);
+      expect(res.body.meta).toMatchObject({ page: 2, limit: 2, total: 5, totalPages: 3 });
+    });
   });
 
   describe('GET /api/v1/residents/:id', () => {

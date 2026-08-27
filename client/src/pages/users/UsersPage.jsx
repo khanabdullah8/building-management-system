@@ -7,14 +7,21 @@ import ErrorState from '../../components/ui/ErrorState'
 import DataTable from '../../components/ui/DataTable'
 import Badge from '../../components/ui/Badge'
 import Modal from '../../components/ui/Modal'
+import Pagination from '../../components/ui/Pagination'
 import http from '../../api/http'
 import { statusTone } from '../../utils/status'
+import { buildListParams } from '../../utils/queryParams'
 import UserModal from './UserModal'
 import './UserModal.css'
+
+const PAGE_SIZE = 20
 
 function UsersPage() {
   const [users, setUsers] = useState([])
   const [query, setQuery] = useState('')
+  const [page, setPage] = useState(1)
+  const [totalPages, setTotalPages] = useState(0)
+  const [total, setTotal] = useState(0)
   const [roleFilter, setRoleFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
   const [loading, setLoading] = useState(true)
@@ -26,14 +33,15 @@ function UsersPage() {
   const requestId = useRef(0)
 
   const fetchUsers = useCallback(
-    async (searchTerm = query, role = roleFilter, status = statusFilter) => {
+    async (searchTerm, pageNumber) => {
       const currentRequest = ++requestId.current
-      const params = new URLSearchParams()
-      if (searchTerm.trim()) params.set('search', searchTerm.trim())
-      if (role) params.set('role', role)
-      if (status) params.set('status', status)
-      const queryString = params.toString()
-      const url = queryString ? `/v1/users?${queryString}` : '/v1/users'
+      const qs = buildListParams({
+        page: pageNumber,
+        limit: PAGE_SIZE,
+        search: searchTerm,
+        filters: { role: roleFilter, status: statusFilter },
+      })
+      const url = `/v1/users${qs ? `?${qs}` : ''}`
 
       setLoading(true)
       setError(null)
@@ -41,6 +49,8 @@ function UsersPage() {
         const response = await http.get(url)
         if (currentRequest === requestId.current) {
           setUsers(response.data?.data || [])
+          setTotalPages(response.data?.meta?.totalPages || 0)
+          setTotal(response.data?.meta?.total || 0)
         }
       } catch (err) {
         if (currentRequest === requestId.current) {
@@ -52,21 +62,28 @@ function UsersPage() {
         }
       }
     },
-    [query, roleFilter, statusFilter]
+    [roleFilter, statusFilter]
   )
 
   useEffect(() => {
     const timer = setTimeout(() => {
-      fetchUsers(query, roleFilter, statusFilter)
+      setPage(1)
+      fetchUsers(query, 1)
     }, query.trim() ? 300 : 0)
 
     return () => clearTimeout(timer)
   }, [query, roleFilter, statusFilter, fetchUsers])
 
+  const handlePageChange = (nextPage) => {
+    if (nextPage < 1 || nextPage > totalPages) return
+    setPage(nextPage)
+    fetchUsers(query, nextPage)
+  }
+
   const handleModalSuccess = async (message) => {
     setEditingUser(null)
     setNotice({ type: 'success', message })
-    await fetchUsers(query, roleFilter, statusFilter)
+    await fetchUsers(query, page)
   }
 
   const handleDelete = async () => {
@@ -78,7 +95,7 @@ function UsersPage() {
       await http.delete(`/v1/users/${userToDelete.id}`)
       setUserToDelete(null)
       setNotice({ type: 'success', message: 'User deleted successfully.' })
-      await fetchUsers(query, roleFilter, statusFilter)
+      await fetchUsers(query, page)
     } catch (err) {
       setNotice({
         type: 'error',
@@ -146,7 +163,7 @@ function UsersPage() {
 
   const renderBody = () => {
     if (loading) return <Spinner label="Loading users…" />
-    if (error) return <ErrorState message={error} onRetry={() => fetchUsers(query, roleFilter, statusFilter)} />
+    if (error) return <ErrorState message={error} onRetry={() => fetchUsers(query, page)} />
     if (users.length === 0) {
       return (
         <EmptyState
@@ -205,6 +222,14 @@ function UsersPage() {
         </select>
       </div>
       <div className="module-body">{renderBody()}</div>
+
+      <Pagination
+        page={page}
+        totalPages={totalPages}
+        total={total}
+        limit={PAGE_SIZE}
+        onPageChange={handlePageChange}
+      />
 
       {editingUser && (
         <UserModal

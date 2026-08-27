@@ -7,15 +7,22 @@ import ErrorState from '../../components/ui/ErrorState'
 import DataTable from '../../components/ui/DataTable'
 import Badge from '../../components/ui/Badge'
 import Modal from '../../components/ui/Modal'
+import Pagination from '../../components/ui/Pagination'
 import http from '../../api/http'
 import { statusTone } from '../../utils/status'
 import { formatCurrency, formatDate } from '../../utils/formatters'
+import { buildListParams } from '../../utils/queryParams'
 import BillingModal from './BillingModal'
 import './BillingPage.css'
+
+const PAGE_SIZE = 20
 
 function BillingPage() {
   const [bills, setBills] = useState([])
   const [query, setQuery] = useState('')
+  const [page, setPage] = useState(1)
+  const [totalPages, setTotalPages] = useState(0)
+  const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [notice, setNotice] = useState(null)
@@ -38,15 +45,15 @@ function BillingPage() {
     return () => { isMounted = false }
   }, [])
 
-  const fetchBills = useCallback(async (searchTerm = query) => {
+  const fetchBills = useCallback(async (searchTerm, pageNumber) => {
     const currentRequest = ++requestId.current
-    const trimmedSearch = searchTerm.trim()
-    const params = new URLSearchParams()
-    if (trimmedSearch) params.set('search', trimmedSearch)
-    if (buildingFilter) params.set('building', buildingFilter)
-    if (statusFilter) params.set('status', statusFilter)
-    const qs = params.toString()
-    const url = qs ? `/v1/billing?${qs}` : '/v1/billing'
+    const qs = buildListParams({
+      page: pageNumber,
+      limit: PAGE_SIZE,
+      search: searchTerm,
+      filters: { building: buildingFilter, status: statusFilter },
+    })
+    const url = `/v1/billing${qs ? `?${qs}` : ''}`
 
     setLoading(true)
     setError(null)
@@ -54,6 +61,8 @@ function BillingPage() {
       const response = await http.get(url)
       if (currentRequest === requestId.current) {
         setBills(response.data?.data || [])
+        setTotalPages(response.data?.meta?.totalPages || 0)
+        setTotal(response.data?.meta?.total || 0)
       }
     } catch (err) {
       if (currentRequest === requestId.current) {
@@ -64,20 +73,27 @@ function BillingPage() {
         setLoading(false)
       }
     }
-  }, [query, buildingFilter, statusFilter])
+  }, [buildingFilter, statusFilter])
 
   useEffect(() => {
     const timer = setTimeout(() => {
-      fetchBills(query)
+      setPage(1)
+      fetchBills(query, 1)
     }, query.trim() ? 300 : 0)
 
     return () => clearTimeout(timer)
-  }, [query, fetchBills])
+  }, [query, buildingFilter, statusFilter, fetchBills])
+
+  const handlePageChange = (nextPage) => {
+    if (nextPage < 1 || nextPage > totalPages) return
+    setPage(nextPage)
+    fetchBills(query, nextPage)
+  }
 
   const handleModalSuccess = async (message) => {
     setEditingBill(null)
     setNotice({ type: 'success', message })
-    await fetchBills(query)
+    await fetchBills(query, page)
   }
 
   const handleDelete = async () => {
@@ -89,7 +105,7 @@ function BillingPage() {
       await http.delete(`/v1/billing/${billToDelete.id}`)
       setBillToDelete(null)
       setNotice({ type: 'success', message: 'Bill deleted successfully.' })
-      await fetchBills(query)
+      await fetchBills(query, page)
     } catch (err) {
       setNotice({ type: 'error', message: err.message || 'Failed to delete bill. Please try again.' })
     } finally {
@@ -149,7 +165,7 @@ function BillingPage() {
 
   const renderBody = () => {
     if (loading) return <Spinner label="Loading bills…" />
-    if (error) return <ErrorState message={error} onRetry={() => fetchBills(query)} />
+    if (error) return <ErrorState message={error} onRetry={() => fetchBills(query, page)} />
     if (bills.length === 0) {
       return (
         <EmptyState
@@ -214,6 +230,14 @@ function BillingPage() {
         </select>
       </div>
       <div className="module-body">{renderBody()}</div>
+
+      <Pagination
+        page={page}
+        totalPages={totalPages}
+        total={total}
+        limit={PAGE_SIZE}
+        onPageChange={handlePageChange}
+      />
 
       {editingBill && (
         <BillingModal

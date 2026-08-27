@@ -7,6 +7,7 @@ const { sendSuccess } = require('../utils/apiResponse');
 const asyncHandler = require('../utils/asyncHandler');
 const { isBuildingAllowed, unitScopeFilter } = require('../utils/scope');
 const { record: recordAudit } = require('../services/auditService');
+const { getPagination, paginationMeta } = require('../utils/pagination');
 
 const billPopulation = {
   path: 'unit',
@@ -40,6 +41,7 @@ const managePaidAt = (bill, newStatus) => {
 const getBills = asyncHandler(async (req, res) => {
   const { search, building, status } = req.query;
   const { buildingIds, unitId } = req.scope;
+  const { page, limit, skip } = getPagination(req.query);
   const filter = {};
 
   if (req.user.role === 'resident') {
@@ -59,10 +61,10 @@ const getBills = asyncHandler(async (req, res) => {
 
   if (building && req.user.role !== 'resident') {
     if (!mongoose.Types.ObjectId.isValid(building)) {
-      return sendSuccess(res, []);
+      return sendSuccess(res, [], null, paginationMeta(page, limit, 0));
     }
     if (buildingIds !== null && !isBuildingAllowed(buildingIds, building)) {
-      return sendSuccess(res, []);
+      return sendSuccess(res, [], null, paginationMeta(page, limit, 0));
     }
     const unitIds = await Unit.find({ building }).select('_id');
     filter.unit = { $in: unitIds.map((u) => u._id) };
@@ -70,7 +72,7 @@ const getBills = asyncHandler(async (req, res) => {
 
   if (status) {
     if (!VALID_STATUSES.includes(status)) {
-      return sendSuccess(res, []);
+      return sendSuccess(res, [], null, paginationMeta(page, limit, 0));
     }
     filter.status = status;
   }
@@ -86,11 +88,14 @@ const getBills = asyncHandler(async (req, res) => {
     ];
   }
 
+  const total = await Bill.countDocuments(filter);
   const bills = await Bill.find(filter)
     .populate(billPopulation)
-    .sort({ createdAt: -1 });
+    .sort({ createdAt: -1 })
+    .limit(limit)
+    .skip(skip);
 
-  return sendSuccess(res, bills);
+  return sendSuccess(res, bills, null, paginationMeta(page, limit, total));
 });
 
 const getBillById = asyncHandler(async (req, res) => {

@@ -113,7 +113,7 @@ describe('NotificationsPage', () => {
     await user.click(screen.getByRole('button', { name: 'Try again' }))
 
     expect(await screen.findByText('Water maintenance on Friday')).toBeInTheDocument()
-    expect(http.get).toHaveBeenCalledWith('/v1/notifications')
+    expect(http.get).toHaveBeenCalledWith('/v1/notifications?page=1&limit=100')
   })
 
   it('shows an empty state when there are no notifications', async () => {

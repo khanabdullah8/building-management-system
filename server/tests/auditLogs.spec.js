@@ -197,6 +197,25 @@ describe('Audit Logging (Phase 20)', () => {
       expect(Array.isArray(invalidLimit)).toBe(true);
       expect(invalidLimit.length).toBeGreaterThan(0);
     });
+
+    it('paginates results with page and limit and reports total metadata', async () => {
+      for (let i = 0; i < 5; i += 1) {
+        await AuditLog.create({
+          actorId: admin._id.toString(),
+          actorName: admin.name,
+          actorRole: 'admin',
+          action: 'created',
+          module: 'unit',
+          resourceLabel: `PAGE-${i}`,
+        });
+      }
+
+      const res = await asUser(admin).get('/api/v1/audit-logs?module=unit&action=created&page=2&limit=2');
+
+      expect(res.status).toBe(200);
+      expect(res.body.data).toHaveLength(2);
+      expect(res.body.meta).toMatchObject({ page: 2, limit: 2, total: 5, totalPages: 3 });
+    });
   });
 
   describe('Event generation', () => {

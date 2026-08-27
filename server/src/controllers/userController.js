@@ -6,6 +6,7 @@ const ApiError = require('../utils/ApiError');
 const asyncHandler = require('../utils/asyncHandler');
 const { sendSuccess } = require('../utils/apiResponse');
 const { record: recordAudit } = require('../services/auditService');
+const { getPagination, paginationMeta } = require('../utils/pagination');
 
 const VALID_ROLES = ['admin', 'staff', 'resident'];
 const VALID_STATUSES = ['active', 'inactive'];
@@ -113,6 +114,7 @@ async function populateUserRelations(user) {
 
 const getUsers = asyncHandler(async (req, res) => {
   const { search, role, status } = req.query;
+  const { page, limit, skip } = getPagination(req.query);
   const filter = {};
 
   if (search && search.trim()) {
@@ -128,12 +130,15 @@ const getUsers = asyncHandler(async (req, res) => {
     filter.status = status;
   }
 
+  const total = await User.countDocuments(filter);
   const users = await User.find(filter)
     .populate(buildingPopulation)
     .populate(residentPopulation)
-    .sort({ createdAt: -1 });
+    .sort({ createdAt: -1 })
+    .limit(limit)
+    .skip(skip);
 
-  sendSuccess(res, users);
+  sendSuccess(res, users, null, paginationMeta(page, limit, total));
 });
 
 const getUserById = asyncHandler(async (req, res) => {

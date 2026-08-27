@@ -7,6 +7,7 @@ const { sendSuccess } = require('../utils/apiResponse');
 const asyncHandler = require('../utils/asyncHandler');
 const { isBuildingAllowed, unitScopeFilter } = require('../utils/scope');
 const { record: recordAudit } = require('../services/auditService');
+const { getPagination, paginationMeta } = require('../utils/pagination');
 
 const residentPopulation = {
   path: 'unit',
@@ -53,6 +54,7 @@ async function attachAccountInfo(residents) {
 const getResidents = asyncHandler(async (req, res) => {
   const { search } = req.query;
   const { buildingIds, unitId } = req.scope;
+  const { page, limit, skip } = getPagination(req.query);
   const filter = {};
 
   if (req.user.role === 'resident') {
@@ -79,11 +81,14 @@ const getResidents = asyncHandler(async (req, res) => {
     ];
   }
 
+  const total = await Resident.countDocuments(filter);
   const residents = await Resident.find(filter)
     .populate(residentPopulation)
-    .sort({ createdAt: -1 });
+    .sort({ createdAt: -1 })
+    .limit(limit)
+    .skip(skip);
 
-  return sendSuccess(res, await attachAccountInfo(residents));
+  return sendSuccess(res, await attachAccountInfo(residents), null, paginationMeta(page, limit, total));
 });
 
 const getResidentById = asyncHandler(async (req, res) => {

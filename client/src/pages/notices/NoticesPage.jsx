@@ -7,15 +7,22 @@ import ErrorState from '../../components/ui/ErrorState'
 import DataTable from '../../components/ui/DataTable'
 import Badge from '../../components/ui/Badge'
 import Modal from '../../components/ui/Modal'
+import Pagination from '../../components/ui/Pagination'
 import http from '../../api/http'
 import { formatDate } from '../../utils/formatters'
 import { statusTone } from '../../utils/status'
+import { buildListParams } from '../../utils/queryParams'
 import NoticeModal from './NoticeModal'
 import './NoticesPage.css'
+
+const PAGE_SIZE = 20
 
 function NoticesPage() {
   const [notices, setNotices] = useState([])
   const [query, setQuery] = useState('')
+  const [page, setPage] = useState(1)
+  const [totalPages, setTotalPages] = useState(0)
+  const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [notice, setNotice] = useState(null)
@@ -38,14 +45,15 @@ function NoticesPage() {
     return () => { isMounted = false }
   }, [])
 
-  const fetchNotices = useCallback(async (searchTerm = query) => {
+  const fetchNotices = useCallback(async (searchTerm, pageNumber) => {
     const currentRequest = ++requestId.current
-    const trimmedSearch = searchTerm.trim()
-    const params = new URLSearchParams()
-    if (trimmedSearch) params.set('search', trimmedSearch)
-    if (buildingFilter) params.set('building', buildingFilter)
-    const qs = params.toString()
-    const url = qs ? `/v1/notices?${qs}` : '/v1/notices'
+    const qs = buildListParams({
+      page: pageNumber,
+      limit: PAGE_SIZE,
+      search: searchTerm,
+      filters: { building: buildingFilter },
+    })
+    const url = `/v1/notices${qs ? `?${qs}` : ''}`
 
     setLoading(true)
     setError(null)
@@ -53,6 +61,8 @@ function NoticesPage() {
       const response = await http.get(url)
       if (currentRequest === requestId.current) {
         setNotices(response.data?.data || [])
+        setTotalPages(response.data?.meta?.totalPages || 0)
+        setTotal(response.data?.meta?.total || 0)
       }
     } catch (err) {
       if (currentRequest === requestId.current) {
@@ -63,20 +73,27 @@ function NoticesPage() {
         setLoading(false)
       }
     }
-  }, [query, buildingFilter])
+  }, [buildingFilter])
 
   useEffect(() => {
     const timer = setTimeout(() => {
-      fetchNotices(query)
+      setPage(1)
+      fetchNotices(query, 1)
     }, query.trim() ? 300 : 0)
 
     return () => clearTimeout(timer)
-  }, [query, fetchNotices])
+  }, [query, buildingFilter, fetchNotices])
+
+  const handlePageChange = (nextPage) => {
+    if (nextPage < 1 || nextPage > totalPages) return
+    setPage(nextPage)
+    fetchNotices(query, nextPage)
+  }
 
   const handleModalSuccess = async (message) => {
     setEditingNotice(null)
     setNotice({ type: 'success', message })
-    await fetchNotices(query)
+    await fetchNotices(query, page)
   }
 
   const handleDelete = async () => {
@@ -88,7 +105,7 @@ function NoticesPage() {
       await http.delete(`/v1/notices/${noticeToDelete.id}`)
       setNoticeToDelete(null)
       setNotice({ type: 'success', message: 'Notice deleted successfully.' })
-      await fetchNotices(query)
+      await fetchNotices(query, page)
     } catch (err) {
       setNotice({ type: 'error', message: err.message || 'Failed to delete notice. Please try again.' })
     } finally {
@@ -131,7 +148,7 @@ function NoticesPage() {
 
   const renderBody = () => {
     if (loading) return <Spinner label="Loading notices…" />
-    if (error) return <ErrorState message={error} onRetry={() => fetchNotices(query)} />
+    if (error) return <ErrorState message={error} onRetry={() => fetchNotices(query, page)} />
     if (notices.length === 0) {
       return (
         <EmptyState
@@ -185,6 +202,14 @@ function NoticesPage() {
         </select>
       </div>
       <div className="module-body">{renderBody()}</div>
+
+      <Pagination
+        page={page}
+        totalPages={totalPages}
+        total={total}
+        limit={PAGE_SIZE}
+        onPageChange={handlePageChange}
+      />
 
       {editingNotice && (
         <NoticeModal

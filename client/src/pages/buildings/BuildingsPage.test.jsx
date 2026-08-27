@@ -71,7 +71,7 @@ describe('BuildingsPage CRUD functionality', () => {
     await user.click(screen.getByRole('button', { name: 'Try again' }))
 
     expect(await screen.findByText('Greenwood Heights')).toBeInTheDocument()
-    expect(http.get).toHaveBeenCalledWith('/v1/buildings')
+    expect(http.get).toHaveBeenCalledWith('/v1/buildings?page=1&limit=20')
   })
 
   it('sends a server-side search request and restores the full list when cleared', async () => {
@@ -82,12 +82,12 @@ describe('BuildingsPage CRUD functionality', () => {
     await user.type(screen.getByRole('searchbox'), 'Greenwood')
 
     await waitFor(() => {
-      expect(http.get).toHaveBeenCalledWith('/v1/buildings?search=Greenwood')
+      expect(http.get).toHaveBeenCalledWith('/v1/buildings?page=1&limit=20&search=Greenwood')
     })
 
     await user.clear(screen.getByRole('searchbox'))
     await waitFor(() => {
-      expect(http.get).toHaveBeenLastCalledWith('/v1/buildings')
+      expect(http.get).toHaveBeenLastCalledWith('/v1/buildings?page=1&limit=20')
     })
   })
 
@@ -250,5 +250,54 @@ describe('BuildingsPage CRUD functionality', () => {
 
     expect(await screen.findByText('Building not found')).toBeInTheDocument()
     expect(screen.getByRole('dialog', { name: 'Delete Building' })).toBeInTheDocument()
+  })
+})
+
+describe('BuildingsPage pagination', () => {
+  const manyBuildings = Array.from({ length: 25 }, (_, i) => ({
+    id: `b-${i}`,
+    code: `BLD-${i}`,
+    name: `Building ${i}`,
+    address: '1 Street',
+    units: 10,
+    status: 'active',
+  }))
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('renders pagination controls when there are multiple pages', async () => {
+    http.get.mockResolvedValue({
+      data: { success: true, data: manyBuildings, meta: { page: 1, limit: 20, total: 25, totalPages: 2 } },
+    })
+    renderPage()
+
+    await screen.findByText('Building 0')
+    expect(screen.getByText('Page 1 of 2')).toBeInTheDocument()
+    expect(screen.getByText(/Showing 1.*20 of 25/)).toBeInTheDocument()
+  })
+
+  it('requests the next page', async () => {
+    const user = userEvent.setup()
+    http.get.mockResolvedValue({
+      data: { success: true, data: manyBuildings, meta: { page: 1, limit: 20, total: 25, totalPages: 2 } },
+    })
+    renderPage()
+
+    await screen.findByText('Building 0')
+    await user.click(screen.getByRole('button', { name: 'Next' }))
+
+    await waitFor(() => {
+      expect(http.get).toHaveBeenCalledWith('/v1/buildings?page=2&limit=20')
+    })
+  })
+
+  it('hides pagination when no paginated metadata is returned', async () => {
+    mockList()
+    renderPage()
+
+    await screen.findByText('Greenwood Heights')
+    expect(screen.queryByRole('navigation', { name: 'Pagination' })).not.toBeInTheDocument()
   })
 })

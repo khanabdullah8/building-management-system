@@ -10,6 +10,7 @@ const {
   notifyMaintenanceStatusChanged,
 } = require('../services/notificationService');
 const { record: recordAudit } = require('../services/auditService');
+const { getPagination, paginationMeta } = require('../utils/pagination');
 
 const maintenancePopulation = {
   path: 'unit',
@@ -23,6 +24,7 @@ const maintenancePopulation = {
 const getMaintenanceRequests = asyncHandler(async (req, res) => {
   const { search } = req.query;
   const { buildingIds, unitId } = req.scope;
+  const { page, limit, skip } = getPagination(req.query);
   const filter = {};
 
   if (req.user.role === 'resident') {
@@ -48,11 +50,14 @@ const getMaintenanceRequests = asyncHandler(async (req, res) => {
     ];
   }
 
+  const total = await Maintenance.countDocuments(filter);
   const requests = await Maintenance.find(filter)
     .populate(maintenancePopulation)
-    .sort({ createdAt: -1 });
+    .sort({ createdAt: -1 })
+    .limit(limit)
+    .skip(skip);
 
-  return sendSuccess(res, requests);
+  return sendSuccess(res, requests, null, paginationMeta(page, limit, total));
 });
 
 const getMaintenanceRequestById = asyncHandler(async (req, res) => {

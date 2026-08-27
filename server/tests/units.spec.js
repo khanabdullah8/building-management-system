@@ -168,6 +168,44 @@ describe('Units API (/api/v1/units)', () => {
       expect(resSearch.body.data.length).toBe(1);
       expect(resSearch.body.data[0].unitNumber).toBe('A-1101');
     });
+
+    it('returns pagination metadata alongside the units array', async () => {
+      const res = await authRequest(app, authToken).get('/api/v1/units');
+
+      expect(Array.isArray(res.body.data)).toBe(true);
+      expect(res.body.meta).toEqual({ page: 1, limit: 20, total: 0, totalPages: 0 });
+    });
+
+    it('paginates units with page and limit and reports total', async () => {
+      await Unit.create([
+        { unitNumber: 'PAG-1', building: sampleBuilding._id },
+        { unitNumber: 'PAG-2', building: sampleBuilding._id },
+        { unitNumber: 'PAG-3', building: sampleBuilding._id },
+        { unitNumber: 'PAG-4', building: sampleBuilding._id },
+        { unitNumber: 'PAG-5', building: sampleBuilding._id },
+      ]);
+
+      const res = await authRequest(app, authToken).get('/api/v1/units?page=2&limit=2');
+
+      expect(res.status).toBe(200);
+      expect(res.body.data).toHaveLength(2);
+      expect(res.body.meta).toMatchObject({ page: 2, limit: 2, total: 5, totalPages: 3 });
+    });
+
+    it('clamps limit to a maximum of 100 and falls back for invalid values', async () => {
+      await Unit.create([
+        { unitNumber: 'MAX-1', building: sampleBuilding._id },
+        { unitNumber: 'MAX-2', building: sampleBuilding._id },
+      ]);
+
+      const clamped = await authRequest(app, authToken).get('/api/v1/units?limit=500');
+      expect(clamped.body.meta.limit).toBe(100);
+      expect(clamped.body.data).toHaveLength(2);
+
+      const invalid = await authRequest(app, authToken).get('/api/v1/units?page=abc&limit=xyz');
+      expect(invalid.body.meta).toMatchObject({ page: 1, limit: 20 });
+      expect(invalid.body.data).toHaveLength(2);
+    });
   });
 
   describe('GET /api/v1/units/:id', () => {

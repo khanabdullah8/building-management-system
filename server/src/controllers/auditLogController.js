@@ -2,13 +2,14 @@ const AuditLog = require('../models/AuditLog');
 const ApiError = require('../utils/ApiError');
 const asyncHandler = require('../utils/asyncHandler');
 const { sendSuccess } = require('../utils/apiResponse');
+const { getPagination, paginationMeta } = require('../utils/pagination');
 
 const VALID_ACTIONS = ['created', 'updated', 'deleted'];
 const DEFAULT_LIMIT = 200;
 const MAX_LIMIT = 500;
 
 // GET /api/v1/audit-logs — admin-only, read-only.
-// Filters: module, action; limit (default 200, max 500). Newest first.
+// Filters: module, action; page/limit (default 200, max 500). Newest first.
 const getAuditLogs = asyncHandler(async (req, res) => {
   const query = {};
 
@@ -25,15 +26,15 @@ const getAuditLogs = asyncHandler(async (req, res) => {
     query.action = req.query.action;
   }
 
-  let limit = parseInt(req.query.limit, 10);
-  if (isNaN(limit)) {
-    limit = DEFAULT_LIMIT;
-  }
-  limit = Math.min(Math.max(limit, 1), MAX_LIMIT);
+  const { page, limit, skip } = getPagination(req.query, {
+    defaultLimit: DEFAULT_LIMIT,
+    maxLimit: MAX_LIMIT,
+  });
 
-  const logs = await AuditLog.find(query).sort({ createdAt: -1 }).limit(limit);
+  const total = await AuditLog.countDocuments(query);
+  const logs = await AuditLog.find(query).sort({ createdAt: -1 }).limit(limit).skip(skip);
 
-  sendSuccess(res, logs, 'Audit logs fetched successfully');
+  sendSuccess(res, logs, 'Audit logs fetched successfully', paginationMeta(page, limit, total));
 });
 
 module.exports = { getAuditLogs };

@@ -7,11 +7,15 @@ import ErrorState from '../../components/ui/ErrorState'
 import DataTable from '../../components/ui/DataTable'
 import Badge from '../../components/ui/Badge'
 import Modal from '../../components/ui/Modal'
+import Pagination from '../../components/ui/Pagination'
 import http from '../../api/http'
 import { statusTone } from '../../utils/status'
 import { formatCurrency, formatDate } from '../../utils/formatters'
+import { buildListParams } from '../../utils/queryParams'
 import PaymentModal from './PaymentModal'
 import './PaymentsPage.css'
+
+const PAGE_SIZE = 20
 
 const METHOD_LABELS = {
   cash: 'Cash',
@@ -24,6 +28,9 @@ const METHOD_LABELS = {
 function PaymentsPage() {
   const [payments, setPayments] = useState([])
   const [query, setQuery] = useState('')
+  const [page, setPage] = useState(1)
+  const [totalPages, setTotalPages] = useState(0)
+  const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [notice, setNotice] = useState(null)
@@ -34,15 +41,15 @@ function PaymentsPage() {
   const [methodFilter, setMethodFilter] = useState('')
   const requestId = useRef(0)
 
-  const fetchPayments = useCallback(async (searchTerm = query) => {
+  const fetchPayments = useCallback(async (searchTerm, pageNumber) => {
     const currentRequest = ++requestId.current
-    const trimmedSearch = searchTerm.trim()
-    const params = new URLSearchParams()
-    if (trimmedSearch) params.set('search', trimmedSearch)
-    if (statusFilter) params.set('status', statusFilter)
-    if (methodFilter) params.set('method', methodFilter)
-    const qs = params.toString()
-    const url = qs ? `/v1/payments?${qs}` : '/v1/payments'
+    const qs = buildListParams({
+      page: pageNumber,
+      limit: PAGE_SIZE,
+      search: searchTerm,
+      filters: { status: statusFilter, method: methodFilter },
+    })
+    const url = `/v1/payments${qs ? `?${qs}` : ''}`
 
     setLoading(true)
     setError(null)
@@ -50,6 +57,8 @@ function PaymentsPage() {
       const response = await http.get(url)
       if (currentRequest === requestId.current) {
         setPayments(response.data?.data || [])
+        setTotalPages(response.data?.meta?.totalPages || 0)
+        setTotal(response.data?.meta?.total || 0)
       }
     } catch (err) {
       if (currentRequest === requestId.current) {
@@ -60,20 +69,27 @@ function PaymentsPage() {
         setLoading(false)
       }
     }
-  }, [query, statusFilter, methodFilter])
+  }, [statusFilter, methodFilter])
 
   useEffect(() => {
     const timer = setTimeout(() => {
-      fetchPayments(query)
+      setPage(1)
+      fetchPayments(query, 1)
     }, query.trim() ? 300 : 0)
 
     return () => clearTimeout(timer)
-  }, [query, fetchPayments])
+  }, [query, statusFilter, methodFilter, fetchPayments])
+
+  const handlePageChange = (nextPage) => {
+    if (nextPage < 1 || nextPage > totalPages) return
+    setPage(nextPage)
+    fetchPayments(query, nextPage)
+  }
 
   const handleModalSuccess = async (message) => {
     setEditingPayment(null)
     setNotice({ type: 'success', message })
-    await fetchPayments(query)
+    await fetchPayments(query, page)
   }
 
   const handleDelete = async () => {
@@ -85,7 +101,7 @@ function PaymentsPage() {
       await http.delete(`/v1/payments/${paymentToDelete.id}`)
       setPaymentToDelete(null)
       setNotice({ type: 'success', message: 'Payment deleted successfully.' })
-      await fetchPayments(query)
+      await fetchPayments(query, page)
     } catch (err) {
       setNotice({ type: 'error', message: err.message || 'Failed to delete payment. Please try again.' })
     } finally {
@@ -151,7 +167,7 @@ function PaymentsPage() {
 
   const renderBody = () => {
     if (loading) return <Spinner label="Loading payments…" />
-    if (error) return <ErrorState message={error} onRetry={() => fetchPayments(query)} />
+    if (error) return <ErrorState message={error} onRetry={() => fetchPayments(query, page)} />
     if (payments.length === 0) {
       return (
         <EmptyState
@@ -213,6 +229,14 @@ function PaymentsPage() {
         </select>
       </div>
       <div className="module-body">{renderBody()}</div>
+
+      <Pagination
+        page={page}
+        totalPages={totalPages}
+        total={total}
+        limit={PAGE_SIZE}
+        onPageChange={handlePageChange}
+      />
 
       {editingPayment && (
         <PaymentModal

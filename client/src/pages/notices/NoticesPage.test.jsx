@@ -99,7 +99,7 @@ describe('NoticesPage CRUD functionality', () => {
     })
     await user.click(screen.getByRole('button', { name: 'Try again' }))
     expect(await screen.findByText('Water supply maintenance')).toBeInTheDocument()
-    expect(http.get).toHaveBeenCalledWith('/v1/notices')
+    expect(http.get).toHaveBeenCalledWith('/v1/notices?page=1&limit=20')
   })
 
   it('uses server-side search and restores the full list when cleared', async () => {
@@ -108,9 +108,9 @@ describe('NoticesPage CRUD functionality', () => {
 
     await screen.findByText('Water supply maintenance')
     await user.type(screen.getByRole('searchbox'), 'water')
-    await waitFor(() => expect(http.get).toHaveBeenCalledWith('/v1/notices?search=water'))
+    await waitFor(() => expect(http.get).toHaveBeenCalledWith('/v1/notices?page=1&limit=20&search=water'))
     await user.clear(screen.getByRole('searchbox'))
-    await waitFor(() => expect(http.get).toHaveBeenLastCalledWith('/v1/notices'))
+    await waitFor(() => expect(http.get).toHaveBeenLastCalledWith('/v1/notices?page=1&limit=20'))
   })
 
   it('filters by building', async () => {
@@ -119,7 +119,7 @@ describe('NoticesPage CRUD functionality', () => {
 
     await screen.findByText('Water supply maintenance')
     await user.selectOptions(screen.getByLabelText('Filter by building'), 'building-2')
-    await waitFor(() => expect(http.get).toHaveBeenCalledWith('/v1/notices?building=building-2'))
+    await waitFor(() => expect(http.get).toHaveBeenCalledWith('/v1/notices?page=1&limit=20&building=building-2'))
   })
 
   it('shows empty state when no notices exist', async () => {
@@ -134,7 +134,7 @@ describe('NoticesPage CRUD functionality', () => {
     renderPage()
     await screen.findByText('Water supply maintenance')
     http.get.mockImplementation((url) => {
-      if (url === '/v1/notices?search=unknown') return Promise.resolve({ data: { success: true, data: [] } })
+      if (url === '/v1/notices?page=1&limit=20&search=unknown') return Promise.resolve({ data: { success: true, data: [] } })
       if (url === '/v1/buildings') return Promise.resolve({ data: { success: true, data: buildings } })
       return Promise.resolve({ data: { success: true, data: notices } })
     })

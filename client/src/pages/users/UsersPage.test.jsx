@@ -165,7 +165,7 @@ describe('UsersPage admin user management', () => {
     await user.click(screen.getByRole('button', { name: 'Try again' }))
 
     expect(await screen.findByText('Ada Admin')).toBeInTheDocument()
-    expect(http.get).toHaveBeenCalledWith('/v1/users')
+    expect(http.get).toHaveBeenCalledWith('/v1/users?page=1&limit=20')
   })
 
   it('sends a search request and restores the full list when cleared', async () => {
@@ -176,12 +176,12 @@ describe('UsersPage admin user management', () => {
     await user.type(screen.getByRole('searchbox'), 'Sam')
 
     await waitFor(() => {
-      expect(http.get).toHaveBeenCalledWith('/v1/users?search=Sam')
+      expect(http.get).toHaveBeenCalledWith('/v1/users?page=1&limit=20&search=Sam')
     })
 
     await user.clear(screen.getByRole('searchbox'))
     await waitFor(() => {
-      expect(http.get).toHaveBeenLastCalledWith('/v1/users')
+      expect(http.get).toHaveBeenLastCalledWith('/v1/users?page=1&limit=20')
     })
   })
 
@@ -193,7 +193,7 @@ describe('UsersPage admin user management', () => {
     await user.selectOptions(screen.getByLabelText('Filter by role'), 'staff')
 
     await waitFor(() => {
-      expect(http.get).toHaveBeenCalledWith('/v1/users?role=staff')
+      expect(http.get).toHaveBeenCalledWith('/v1/users?page=1&limit=20&role=staff')
     })
   })
 
@@ -206,7 +206,7 @@ describe('UsersPage admin user management', () => {
     await user.selectOptions(screen.getByLabelText('Filter by status'), 'inactive')
 
     await waitFor(() => {
-      expect(http.get).toHaveBeenCalledWith('/v1/users?search=Rita&status=inactive')
+      expect(http.get).toHaveBeenCalledWith('/v1/users?page=1&limit=20&search=Rita&status=inactive')
     })
   })
 

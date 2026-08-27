@@ -6,6 +6,7 @@ const { sendSuccess } = require('../utils/apiResponse');
 const asyncHandler = require('../utils/asyncHandler');
 const { isBuildingAllowed, unitScopeFilter } = require('../utils/scope');
 const { record: recordAudit } = require('../services/auditService');
+const { getPagination, paginationMeta } = require('../utils/pagination');
 
 const visitorPopulation = {
   path: 'unit',
@@ -31,6 +32,7 @@ const validateUnit = async (unitId) => {
 const getVisitors = asyncHandler(async (req, res) => {
   const { search, unit } = req.query;
   const { buildingIds, unitId } = req.scope;
+  const { page, limit, skip } = getPagination(req.query);
   const filter = {};
 
   if (req.user.role === 'resident') {
@@ -60,7 +62,7 @@ const getVisitors = asyncHandler(async (req, res) => {
 
   if (unit) {
     if (!mongoose.Types.ObjectId.isValid(unit)) {
-      return sendSuccess(res, []);
+      return sendSuccess(res, [], null, paginationMeta(page, limit, 0));
     }
     if (filter.unit) {
       filter.unit = { $all: [filter.unit, new mongoose.Types.ObjectId(unit)] };
@@ -69,11 +71,14 @@ const getVisitors = asyncHandler(async (req, res) => {
     }
   }
 
+  const total = await Visitor.countDocuments(filter);
   const visitors = await Visitor.find(filter)
     .populate(visitorPopulation)
-    .sort({ checkInAt: -1 });
+    .sort({ checkInAt: -1 })
+    .limit(limit)
+    .skip(skip);
 
-  return sendSuccess(res, visitors);
+  return sendSuccess(res, visitors, null, paginationMeta(page, limit, total));
 });
 
 const getVisitorById = asyncHandler(async (req, res) => {

@@ -8,6 +8,7 @@ import DataTable from '../../components/ui/DataTable'
 import Badge from '../../components/ui/Badge'
 import http from '../../api/http'
 import { formatDateTime } from '../../utils/formatters'
+import { buildListParams } from '../../utils/queryParams'
 import './NotificationsPage.css'
 
 function NotificationsPage() {
@@ -26,7 +27,8 @@ function NotificationsPage() {
     setLoading(true)
     setError(null)
     try {
-      const response = await http.get('/v1/notifications')
+      const qs = buildListParams({ page: 1, limit: 100 })
+      const response = await http.get(`/v1/notifications?${qs}`)
       if (currentRequest === requestId.current) {
         setNotifications(response.data?.data || [])
       }

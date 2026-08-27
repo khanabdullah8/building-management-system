@@ -301,6 +301,18 @@ describe('Complaints API (/api/v1/complaints)', () => {
       expect(literalDot.status).toBe(200);
       expect(literalDot.body.data).toHaveLength(0);
     });
+
+    it('paginates results with page and limit and reports total', async () => {
+      for (let i = 0; i < 5; i += 1) {
+        await Complaint.create({ ...validUnitPayload(), subject: `Paged complaint ${i}` });
+      }
+
+      const res = await authRequest(app, authToken).get('/api/v1/complaints?page=2&limit=2');
+
+      expect(res.status).toBe(200);
+      expect(res.body.data).toHaveLength(2);
+      expect(res.body.meta).toMatchObject({ page: 2, limit: 2, total: 5, totalPages: 3 });
+    });
   });
 
   describe('GET /api/v1/complaints/:id', () => {

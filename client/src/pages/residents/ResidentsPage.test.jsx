@@ -108,7 +108,7 @@ describe('ResidentsPage CRUD functionality', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Unable to reach the server')
     await user.click(screen.getByRole('button', { name: 'Try again' }))
     expect(await screen.findByText('Rahul Sharma')).toBeInTheDocument()
-    expect(http.get).toHaveBeenCalledWith('/v1/residents')
+    expect(http.get).toHaveBeenCalledWith('/v1/residents?page=1&limit=20')
   })
 
   it('uses server-side search and restores the full list when cleared', async () => {
@@ -117,9 +117,9 @@ describe('ResidentsPage CRUD functionality', () => {
 
     await screen.findByText('Rahul Sharma')
     await user.type(screen.getByRole('searchbox'), 'Rahul')
-    await waitFor(() => expect(http.get).toHaveBeenCalledWith('/v1/residents?search=Rahul'))
+    await waitFor(() => expect(http.get).toHaveBeenCalledWith('/v1/residents?page=1&limit=20&search=Rahul'))
     await user.clear(screen.getByRole('searchbox'))
-    await waitFor(() => expect(http.get).toHaveBeenLastCalledWith('/v1/residents'))
+    await waitFor(() => expect(http.get).toHaveBeenLastCalledWith('/v1/residents?page=1&limit=20'))
   })
 
   it('shows empty and no-search-results states', async () => {
@@ -134,7 +134,7 @@ describe('ResidentsPage CRUD functionality', () => {
     renderPage()
     await screen.findByText('Rahul Sharma')
     http.get.mockImplementation((url) => {
-      if (url === '/v1/residents?search=unknown') return Promise.resolve({ data: { success: true, data: [] } })
+      if (url === '/v1/residents?page=1&limit=20&search=unknown') return Promise.resolve({ data: { success: true, data: [] } })
       if (url === '/v1/units') return Promise.resolve({ data: { success: true, data: units } })
       return Promise.resolve({ data: { success: true, data: residents } })
     })
@@ -175,7 +175,7 @@ describe('ResidentsPage CRUD functionality', () => {
 
     await screen.findByText('Rahul Sharma')
     await user.type(screen.getByRole('searchbox'), 'Rahul')
-    await waitFor(() => expect(http.get).toHaveBeenCalledWith('/v1/residents?search=Rahul'))
+    await waitFor(() => expect(http.get).toHaveBeenCalledWith('/v1/residents?page=1&limit=20&search=Rahul'))
     await user.click(screen.getByRole('button', { name: 'Add Resident' }))
     await selectUnit(user)
     await user.type(screen.getByLabelText(/^Name/), ' Rahul Verma ')
@@ -186,7 +186,7 @@ describe('ResidentsPage CRUD functionality', () => {
       name: 'Rahul Verma', unit: 'unit-1', phone: '55555', type: 'owner', status: 'active',
     }))
     expect(await screen.findByText('Resident created successfully.')).toBeInTheDocument()
-    expect(http.get).toHaveBeenLastCalledWith('/v1/residents?search=Rahul')
+    expect(http.get).toHaveBeenLastCalledWith('/v1/residents?page=1&limit=20&search=Rahul')
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 
@@ -225,7 +225,7 @@ describe('ResidentsPage CRUD functionality', () => {
     mockUnits()
     await screen.findByText('Rahul Sharma')
     await user.type(screen.getByRole('searchbox'), 'Rahul')
-    await waitFor(() => expect(http.get).toHaveBeenCalledWith('/v1/residents?search=Rahul'))
+    await waitFor(() => expect(http.get).toHaveBeenCalledWith('/v1/residents?page=1&limit=20&search=Rahul'))
     await user.click(screen.getAllByRole('button', { name: 'Edit' })[0])
     await screen.findByRole('option', { name: 'Greenwood Heights (BLD-A) — A-1101' })
     await user.selectOptions(screen.getByLabelText(/^Status/), 'inactive')
@@ -235,7 +235,7 @@ describe('ResidentsPage CRUD functionality', () => {
       name: 'Rahul Sharma', unit: 'unit-1', phone: '+91 98123 45670', type: 'owner', status: 'inactive',
     }))
     expect(await screen.findByText('Resident updated successfully.')).toBeInTheDocument()
-    expect(http.get).toHaveBeenLastCalledWith('/v1/residents?search=Rahul')
+    expect(http.get).toHaveBeenLastCalledWith('/v1/residents?page=1&limit=20&search=Rahul')
   })
 
   it('keeps edit modal open on API error and supports Unit reassignment', async () => {
@@ -273,13 +273,13 @@ describe('ResidentsPage CRUD functionality', () => {
     renderPage()
     await screen.findByText('Rahul Sharma')
     await user.type(screen.getByRole('searchbox'), 'Rahul')
-    await waitFor(() => expect(http.get).toHaveBeenCalledWith('/v1/residents?search=Rahul'))
+    await waitFor(() => expect(http.get).toHaveBeenCalledWith('/v1/residents?page=1&limit=20&search=Rahul'))
     await user.click(screen.getAllByRole('button', { name: 'Delete' })[0])
     await user.click(screen.getByRole('button', { name: 'Delete Resident' }))
 
     await waitFor(() => expect(http.delete).toHaveBeenCalledWith('/v1/residents/resident-1'))
     expect(await screen.findByText('Resident deleted successfully.')).toBeInTheDocument()
-    expect(http.get).toHaveBeenLastCalledWith('/v1/residents?search=Rahul')
+    expect(http.get).toHaveBeenLastCalledWith('/v1/residents?page=1&limit=20&search=Rahul')
   })
 
   it('keeps delete confirmation open on API failure', async () => {

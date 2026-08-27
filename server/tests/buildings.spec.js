@@ -129,6 +129,55 @@ describe('Building API (/api/v1/buildings)', () => {
       expect(res.body.data.length).toBe(1);
       expect(res.body.data[0].code).toBe('BLD-A');
     });
+
+    it('returns pagination metadata alongside the data array', async () => {
+      const res = await authRequest(app, authToken).get('/api/v1/buildings');
+
+      expect(Array.isArray(res.body.data)).toBe(true);
+      expect(res.body.meta).toEqual({ page: 1, limit: 20, total: 0, totalPages: 0 });
+    });
+
+    it('paginates results with page and limit', async () => {
+      const docs = Array.from({ length: 5 }, (_, i) => ({
+        code: `PAG-${i}`,
+        name: `Pagination Building ${i}`,
+      }));
+      await Building.create(docs);
+
+      const res = await authRequest(app, authToken).get('/api/v1/buildings?page=2&limit=2');
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.length).toBe(2);
+      expect(res.body.meta.page).toBe(2);
+      expect(res.body.meta.limit).toBe(2);
+      expect(res.body.meta.total).toBe(5);
+      expect(res.body.meta.totalPages).toBe(3);
+    });
+
+    it('clamps limit to a maximum of 100', async () => {
+      const docs = Array.from({ length: 5 }, (_, i) => ({
+        code: `MAX-${i}`,
+        name: `Max Building ${i}`,
+      }));
+      await Building.create(docs);
+
+      const res = await authRequest(app, authToken).get('/api/v1/buildings?limit=1000');
+
+      expect(res.status).toBe(200);
+      expect(res.body.meta.limit).toBe(100);
+      expect(res.body.data.length).toBe(5);
+    });
+
+    it('falls back to defaults for invalid page and limit', async () => {
+      await Building.create({ code: 'INV-A', name: 'Invalid Values' });
+
+      const res = await authRequest(app, authToken).get('/api/v1/buildings?page=abc&limit=xyz');
+
+      expect(res.status).toBe(200);
+      expect(res.body.meta.page).toBe(1);
+      expect(res.body.meta.limit).toBe(20);
+      expect(res.body.data).toHaveLength(1);
+    });
   });
 
   describe('GET /api/v1/buildings/:id', () => {

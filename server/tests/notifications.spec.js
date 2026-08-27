@@ -182,6 +182,22 @@ describe('In-App Notifications (Phase 19)', () => {
       const titles = res.body.data.map((n) => n.title);
       expect(titles.indexOf('Newer second seeded')).toBeLessThan(titles.indexOf('Older first seeded'));
     });
+
+    it('caps the feed and returns pagination metadata', async () => {
+      for (let i = 0; i < 105; i += 1) {
+        await Notification.create({ user: unlinkedUser._id, type: 'system', title: `Bulk ${i}` });
+      }
+
+      const res = await asUser(unlinkedUser).get('/api/v1/notifications');
+
+      expect(res.body.meta.limit).toBe(100);
+      expect(res.body.data.length).toBe(100);
+      expect(res.body.meta.total).toBeGreaterThanOrEqual(105);
+
+      const second = await asUser(unlinkedUser).get('/api/v1/notifications?page=2&limit=20');
+      expect(second.body.meta).toMatchObject({ page: 2, limit: 20 });
+      expect(second.body.data.length).toBe(20);
+    });
   });
 
   describe('Notice creation fan-out', () => {

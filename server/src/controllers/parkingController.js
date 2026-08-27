@@ -7,6 +7,7 @@ const { sendSuccess } = require('../utils/apiResponse');
 const asyncHandler = require('../utils/asyncHandler');
 const { isBuildingAllowed } = require('../utils/scope');
 const { record: recordAudit } = require('../services/auditService');
+const { getPagination, paginationMeta } = require('../utils/pagination');
 
 const buildingPopulation = { path: 'building', select: 'name code' };
 
@@ -51,28 +52,29 @@ const validateUnitBelongsToBuilding = async (unitId, buildingId) => {
 const getParkingSlots = asyncHandler(async (req, res) => {
   const { search, building, unit } = req.query;
   const { buildingIds } = req.scope;
+  const { page, limit, skip } = getPagination(req.query);
   const filter = {};
 
   if (buildingIds !== null) {
     if (!buildingIds || buildingIds.length === 0) {
-      return sendSuccess(res, []);
+      return sendSuccess(res, [], null, paginationMeta(page, limit, 0));
     }
     filter.building = { $in: buildingIds.map((id) => new mongoose.Types.ObjectId(id)) };
   }
 
   if (building) {
     if (!mongoose.Types.ObjectId.isValid(building)) {
-      return sendSuccess(res, []);
+      return sendSuccess(res, [], null, paginationMeta(page, limit, 0));
     }
     if (buildingIds !== null && !isBuildingAllowed(buildingIds, building)) {
-      return sendSuccess(res, []);
+      return sendSuccess(res, [], null, paginationMeta(page, limit, 0));
     }
     filter.building = building;
   }
 
   if (unit) {
     if (!mongoose.Types.ObjectId.isValid(unit)) {
-      return sendSuccess(res, []);
+      return sendSuccess(res, [], null, paginationMeta(page, limit, 0));
     }
     filter.unit = unit;
   }
@@ -90,12 +92,15 @@ const getParkingSlots = asyncHandler(async (req, res) => {
     ];
   }
 
+  const total = await Parking.countDocuments(filter);
   const slots = await Parking.find(filter)
     .populate(buildingPopulation)
     .populate(parkingPopulation)
-    .sort({ createdAt: -1 });
+    .sort({ createdAt: -1 })
+    .limit(limit)
+    .skip(skip);
 
-  return sendSuccess(res, slots);
+  return sendSuccess(res, slots, null, paginationMeta(page, limit, total));
 });
 
 const getParkingSlotById = asyncHandler(async (req, res) => {

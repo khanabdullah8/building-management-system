@@ -85,7 +85,7 @@ describe('ComplaintsPage CRUD functionality', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Unable to reach the server')
     await user.click(screen.getByRole('button', { name: 'Try again' }))
     expect(await screen.findByText('Water leakage in kitchen')).toBeInTheDocument()
-    expect(http.get).toHaveBeenCalledWith('/v1/complaints')
+    expect(http.get).toHaveBeenCalledWith('/v1/complaints?page=1&limit=20')
   })
 
   it('uses server-side search and restores the full list when cleared', async () => {
@@ -94,9 +94,9 @@ describe('ComplaintsPage CRUD functionality', () => {
 
     await screen.findByText('Water leakage in kitchen')
     await user.type(screen.getByRole('searchbox'), 'water')
-    await waitFor(() => expect(http.get).toHaveBeenCalledWith('/v1/complaints?search=water'))
+    await waitFor(() => expect(http.get).toHaveBeenCalledWith('/v1/complaints?page=1&limit=20&search=water'))
     await user.clear(screen.getByRole('searchbox'))
-    await waitFor(() => expect(http.get).toHaveBeenLastCalledWith('/v1/complaints'))
+    await waitFor(() => expect(http.get).toHaveBeenLastCalledWith('/v1/complaints?page=1&limit=20'))
   })
 
   it('shows empty state when no complaints exist', async () => {
@@ -111,7 +111,7 @@ describe('ComplaintsPage CRUD functionality', () => {
     renderPage()
     await screen.findByText('Water leakage in kitchen')
     http.get.mockImplementation((url) => {
-      if (url === '/v1/complaints?search=unknown') return Promise.resolve({ data: { success: true, data: [] } })
+      if (url === '/v1/complaints?page=1&limit=20&search=unknown') return Promise.resolve({ data: { success: true, data: [] } })
       if (url === '/v1/units') return Promise.resolve({ data: { success: true, data: units } })
       return Promise.resolve({ data: { success: true, data: complaints } })
     })

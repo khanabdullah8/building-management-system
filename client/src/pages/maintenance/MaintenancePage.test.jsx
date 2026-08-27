@@ -84,7 +84,7 @@ describe('MaintenancePage CRUD functionality', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Unable to reach the server')
     await user.click(screen.getByRole('button', { name: 'Try again' }))
     expect(await screen.findByText('AC not cooling')).toBeInTheDocument()
-    expect(http.get).toHaveBeenCalledWith('/v1/maintenance')
+    expect(http.get).toHaveBeenCalledWith('/v1/maintenance?page=1&limit=20')
   })
 
   it('uses server-side search and restores the full list when cleared', async () => {
@@ -93,9 +93,9 @@ describe('MaintenancePage CRUD functionality', () => {
 
     await screen.findByText('AC not cooling')
     await user.type(screen.getByRole('searchbox'), 'AC')
-    await waitFor(() => expect(http.get).toHaveBeenCalledWith('/v1/maintenance?search=AC'))
+    await waitFor(() => expect(http.get).toHaveBeenCalledWith('/v1/maintenance?page=1&limit=20&search=AC'))
     await user.clear(screen.getByRole('searchbox'))
-    await waitFor(() => expect(http.get).toHaveBeenLastCalledWith('/v1/maintenance'))
+    await waitFor(() => expect(http.get).toHaveBeenLastCalledWith('/v1/maintenance?page=1&limit=20'))
   })
 
   it('shows empty state when no requests exist', async () => {
@@ -110,7 +110,7 @@ describe('MaintenancePage CRUD functionality', () => {
     renderPage()
     await screen.findByText('AC not cooling')
     http.get.mockImplementation((url) => {
-      if (url === '/v1/maintenance?search=unknown') return Promise.resolve({ data: { success: true, data: [] } })
+      if (url === '/v1/maintenance?page=1&limit=20&search=unknown') return Promise.resolve({ data: { success: true, data: [] } })
       if (url === '/v1/units') return Promise.resolve({ data: { success: true, data: units } })
       return Promise.resolve({ data: { success: true, data: maintenanceRequests } })
     })
@@ -151,7 +151,7 @@ describe('MaintenancePage CRUD functionality', () => {
 
     await screen.findByText('AC not cooling')
     await user.type(screen.getByRole('searchbox'), 'AC')
-    await waitFor(() => expect(http.get).toHaveBeenCalledWith('/v1/maintenance?search=AC'))
+    await waitFor(() => expect(http.get).toHaveBeenCalledWith('/v1/maintenance?page=1&limit=20&search=AC'))
     await user.click(screen.getByRole('button', { name: 'New Request' }))
     await selectUnit(user)
     await user.type(screen.getByLabelText(/^Title/), ' Leaking pipe ')
@@ -163,7 +163,7 @@ describe('MaintenancePage CRUD functionality', () => {
       title: 'Leaking pipe', unit: 'unit-1', description: 'Kitchen sink', priority: 'medium', assignedTo: 'Joseph', status: 'open',
     }))
     expect(await screen.findByText('Maintenance request created successfully.')).toBeInTheDocument()
-    expect(http.get).toHaveBeenLastCalledWith('/v1/maintenance?search=AC')
+    expect(http.get).toHaveBeenLastCalledWith('/v1/maintenance?page=1&limit=20&search=AC')
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 
@@ -204,7 +204,7 @@ describe('MaintenancePage CRUD functionality', () => {
     mockUnits()
     await screen.findByText('AC not cooling')
     await user.type(screen.getByRole('searchbox'), 'AC')
-    await waitFor(() => expect(http.get).toHaveBeenCalledWith('/v1/maintenance?search=AC'))
+    await waitFor(() => expect(http.get).toHaveBeenCalledWith('/v1/maintenance?page=1&limit=20&search=AC'))
     await user.click(screen.getAllByRole('button', { name: 'Edit' })[0])
     await screen.findByRole('option', { name: 'Greenwood Heights (BLD-A) — A-1101' })
     await user.selectOptions(screen.getByLabelText(/^Status/), 'completed')
@@ -214,7 +214,7 @@ describe('MaintenancePage CRUD functionality', () => {
       title: 'AC not cooling', unit: 'unit-1', description: 'Living room AC', priority: 'high', assignedTo: 'Ramesh Kumar', status: 'completed',
     }))
     expect(await screen.findByText('Maintenance request updated successfully.')).toBeInTheDocument()
-    expect(http.get).toHaveBeenLastCalledWith('/v1/maintenance?search=AC')
+    expect(http.get).toHaveBeenLastCalledWith('/v1/maintenance?page=1&limit=20&search=AC')
   })
 
   it('keeps edit modal open on API error and supports Unit reassignment', async () => {
@@ -252,13 +252,13 @@ describe('MaintenancePage CRUD functionality', () => {
     renderPage()
     await screen.findByText('AC not cooling')
     await user.type(screen.getByRole('searchbox'), 'AC')
-    await waitFor(() => expect(http.get).toHaveBeenCalledWith('/v1/maintenance?search=AC'))
+    await waitFor(() => expect(http.get).toHaveBeenCalledWith('/v1/maintenance?page=1&limit=20&search=AC'))
     await user.click(screen.getAllByRole('button', { name: 'Delete' })[0])
     await user.click(screen.getByRole('button', { name: 'Delete Request' }))
 
     await waitFor(() => expect(http.delete).toHaveBeenCalledWith('/v1/maintenance/req-1'))
     expect(await screen.findByText('Maintenance request deleted successfully.')).toBeInTheDocument()
-    expect(http.get).toHaveBeenLastCalledWith('/v1/maintenance?search=AC')
+    expect(http.get).toHaveBeenLastCalledWith('/v1/maintenance?page=1&limit=20&search=AC')
   })
 
   it('keeps delete confirmation open on API failure', async () => {

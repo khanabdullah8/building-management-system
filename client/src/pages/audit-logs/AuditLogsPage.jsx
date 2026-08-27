@@ -6,8 +6,10 @@ import EmptyState from '../../components/ui/EmptyState'
 import ErrorState from '../../components/ui/ErrorState'
 import DataTable from '../../components/ui/DataTable'
 import Badge from '../../components/ui/Badge'
+import Pagination from '../../components/ui/Pagination'
 import http from '../../api/http'
 import { formatDateTime } from '../../utils/formatters'
+import { buildListParams } from '../../utils/queryParams'
 
 const MODULES = [
   'building',
@@ -69,24 +71,27 @@ const columns = [
 function AuditLogsPage() {
   const [logs, setLogs] = useState([])
   const [query, setQuery] = useState('')
+  const [page, setPage] = useState(1)
   const [moduleFilter, setModuleFilter] = useState('')
   const [actionFilter, setActionFilter] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const requestId = useRef(0)
+  const PAGE_SIZE = 500
 
   const fetchLogs = useCallback(async (moduleValue = moduleFilter, actionValue = actionFilter) => {
     const currentRequest = ++requestId.current
-    const params = new URLSearchParams()
-    if (moduleValue) params.set('module', moduleValue)
-    if (actionValue) params.set('action', actionValue)
-    params.set('limit', '500')
-    const queryString = params.toString()
+    const qs = buildListParams({
+      page: 1,
+      limit: PAGE_SIZE,
+      filters: { module: moduleValue, action: actionValue },
+    })
+    const url = `/v1/audit-logs${qs ? `?${qs}` : ''}`
 
     setLoading(true)
     setError(null)
     try {
-      const response = await http.get(`/v1/audit-logs${queryString ? `?${queryString}` : ''}`)
+      const response = await http.get(url)
       if (currentRequest === requestId.current) {
         setLogs(response.data?.data || [])
       }
@@ -103,6 +108,7 @@ function AuditLogsPage() {
 
   useEffect(() => {
     const timer = setTimeout(() => {
+      setPage(1)
       fetchLogs(moduleFilter, actionFilter)
     }, 0)
 
@@ -117,6 +123,15 @@ function AuditLogsPage() {
       .toLowerCase()
     return haystack.includes(query.trim().toLowerCase())
   })
+
+  const filteredTotalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const safePage = Math.min(page, filteredTotalPages)
+  const pageItems = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE)
+
+  const handlePageChange = (nextPage) => {
+    if (nextPage < 1 || nextPage > filteredTotalPages) return
+    setPage(nextPage)
+  }
 
   const hasFilters = query.trim() || moduleFilter || actionFilter
 
@@ -135,7 +150,7 @@ function AuditLogsPage() {
         />
       )
     }
-    return <DataTable columns={columns} rows={filtered} />
+    return <DataTable columns={columns} rows={pageItems} />
   }
 
   return (
@@ -146,7 +161,14 @@ function AuditLogsPage() {
       />
 
       <div className="module-toolbar">
-        <SearchInput value={query} onChange={setQuery} placeholder="Search audit logs…" />
+        <SearchInput
+          value={query}
+          onChange={(value) => {
+            setQuery(value)
+            setPage(1)
+          }}
+          placeholder="Search audit logs…"
+        />
         <select
           aria-label="Filter by module"
           className="form-input module-filter-select"
@@ -175,6 +197,14 @@ function AuditLogsPage() {
         </select>
       </div>
       <div className="module-body">{renderBody()}</div>
+
+      <Pagination
+        page={safePage}
+        totalPages={filteredTotalPages}
+        total={filtered.length}
+        limit={PAGE_SIZE}
+        onPageChange={handlePageChange}
+      />
     </div>
   )
 }

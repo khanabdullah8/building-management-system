@@ -107,7 +107,7 @@ describe('BillingPage CRUD functionality', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Unable to reach the server')
     await user.click(screen.getByRole('button', { name: 'Try again' }))
     expect(await screen.findByText('BILL-001')).toBeInTheDocument()
-    expect(http.get).toHaveBeenCalledWith('/v1/billing')
+    expect(http.get).toHaveBeenCalledWith('/v1/billing?page=1&limit=20')
   })
 
   it('uses server-side search', async () => {
@@ -116,9 +116,9 @@ describe('BillingPage CRUD functionality', () => {
 
     await screen.findByText('BILL-001')
     await user.type(screen.getByRole('searchbox'), 'BILL-001')
-    await waitFor(() => expect(http.get).toHaveBeenCalledWith('/v1/billing?search=BILL-001'))
+    await waitFor(() => expect(http.get).toHaveBeenCalledWith('/v1/billing?page=1&limit=20&search=BILL-001'))
     await user.clear(screen.getByRole('searchbox'))
-    await waitFor(() => expect(http.get).toHaveBeenLastCalledWith('/v1/billing'))
+    await waitFor(() => expect(http.get).toHaveBeenLastCalledWith('/v1/billing?page=1&limit=20'))
   })
 
   it('shows empty state when no bills exist', async () => {
@@ -133,7 +133,7 @@ describe('BillingPage CRUD functionality', () => {
     renderPage()
     await screen.findByText('BILL-001')
     http.get.mockImplementation((url) => {
-      if (url === '/v1/billing?search=unknown') return Promise.resolve({ data: { success: true, data: [] } })
+      if (url === '/v1/billing?page=1&limit=20&search=unknown') return Promise.resolve({ data: { success: true, data: [] } })
       if (url === '/v1/buildings') return Promise.resolve({ data: { success: true, data: buildings } })
       return Promise.resolve({ data: { success: true, data: bills } })
     })
@@ -146,7 +146,7 @@ describe('BillingPage CRUD functionality', () => {
     renderPage()
     await screen.findByText('BILL-001')
     await user.selectOptions(screen.getByLabelText('Filter by building'), 'building-1')
-    await waitFor(() => expect(http.get).toHaveBeenCalledWith('/v1/billing?building=building-1'))
+    await waitFor(() => expect(http.get).toHaveBeenCalledWith('/v1/billing?page=1&limit=20&building=building-1'))
   })
 
   it('filters by status', async () => {
@@ -154,7 +154,7 @@ describe('BillingPage CRUD functionality', () => {
     renderPage()
     await screen.findByText('BILL-001')
     await user.selectOptions(screen.getByLabelText('Filter by status'), 'paid')
-    await waitFor(() => expect(http.get).toHaveBeenCalledWith('/v1/billing?status=paid'))
+    await waitFor(() => expect(http.get).toHaveBeenCalledWith('/v1/billing?page=1&limit=20&status=paid'))
   })
 
   it('opens Create Bill modal and loads Unit options', async () => {

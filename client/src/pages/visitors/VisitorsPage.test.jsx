@@ -108,7 +108,7 @@ describe('VisitorsPage CRUD functionality', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Unable to reach the server')
     await user.click(screen.getByRole('button', { name: 'Try again' }))
     expect(await screen.findByText('Vikram Singh')).toBeInTheDocument()
-    expect(http.get).toHaveBeenCalledWith('/v1/visitors')
+    expect(http.get).toHaveBeenCalledWith('/v1/visitors?page=1&limit=20')
   })
 
   it('uses server-side search and restores the full list when cleared', async () => {
@@ -117,9 +117,9 @@ describe('VisitorsPage CRUD functionality', () => {
 
     await screen.findByText('Vikram Singh')
     await user.type(screen.getByRole('searchbox'), 'vikram')
-    await waitFor(() => expect(http.get).toHaveBeenCalledWith('/v1/visitors?search=vikram'))
+    await waitFor(() => expect(http.get).toHaveBeenCalledWith('/v1/visitors?page=1&limit=20&search=vikram'))
     await user.clear(screen.getByRole('searchbox'))
-    await waitFor(() => expect(http.get).toHaveBeenLastCalledWith('/v1/visitors'))
+    await waitFor(() => expect(http.get).toHaveBeenLastCalledWith('/v1/visitors?page=1&limit=20'))
   })
 
   it('shows empty state when no visitors exist', async () => {
@@ -134,7 +134,7 @@ describe('VisitorsPage CRUD functionality', () => {
     renderPage()
     await screen.findByText('Vikram Singh')
     http.get.mockImplementation((url) => {
-      if (url === '/v1/visitors?search=unknown') return Promise.resolve({ data: { success: true, data: [] } })
+      if (url === '/v1/visitors?page=1&limit=20&search=unknown') return Promise.resolve({ data: { success: true, data: [] } })
       if (url === '/v1/units') return Promise.resolve({ data: { success: true, data: units } })
       return Promise.resolve({ data: { success: true, data: visitors } })
     })
@@ -148,7 +148,7 @@ describe('VisitorsPage CRUD functionality', () => {
     renderPage()
     await screen.findByText('Vikram Singh')
     await user.selectOptions(screen.getByLabelText('Filter by unit'), 'unit-1')
-    await waitFor(() => expect(http.get).toHaveBeenCalledWith('/v1/visitors?unit=unit-1'))
+    await waitFor(() => expect(http.get).toHaveBeenCalledWith('/v1/visitors?page=1&limit=20&unit=unit-1'))
   })
 
   it('opens Register Visitor modal and loads Unit options', async () => {

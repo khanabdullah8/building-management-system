@@ -338,6 +338,18 @@ describe('Visitors API (/api/v1/visitors)', () => {
       expect(res.status).toBe(200);
       expect(res.body.data).toEqual([]);
     });
+
+    it('paginates results with page and limit and reports total', async () => {
+      for (let i = 0; i < 5; i += 1) {
+        await Visitor.create({ ...validPayload(), name: `Paged Visitor ${i}` });
+      }
+
+      const res = await authRequest(app, authToken).get('/api/v1/visitors?page=2&limit=2');
+
+      expect(res.status).toBe(200);
+      expect(res.body.data).toHaveLength(2);
+      expect(res.body.meta).toMatchObject({ page: 2, limit: 2, total: 5, totalPages: 3 });
+    });
   });
 
   describe('GET /api/v1/visitors/:id', () => {

@@ -6,15 +6,17 @@ const { sendSuccess } = require('../utils/apiResponse');
 const asyncHandler = require('../utils/asyncHandler');
 const { isBuildingAllowed } = require('../utils/scope');
 const { record: recordAudit } = require('../services/auditService');
+const { getPagination, paginationMeta } = require('../utils/pagination');
 
 const getUnits = asyncHandler(async (req, res) => {
   const { search, status, building } = req.query;
   const { buildingIds } = req.scope;
+  const { page, limit, skip } = getPagination(req.query);
   const filter = {};
 
   if (buildingIds !== null) {
     if (!buildingIds || buildingIds.length === 0) {
-      return sendSuccess(res, []);
+      return sendSuccess(res, [], null, paginationMeta(page, limit, 0));
     }
     filter.building = { $in: buildingIds.map((id) => new mongoose.Types.ObjectId(id)) };
   }
@@ -26,7 +28,7 @@ const getUnits = asyncHandler(async (req, res) => {
   if (building) {
     if (mongoose.Types.ObjectId.isValid(building)) {
       if (buildingIds !== null && !isBuildingAllowed(buildingIds, building)) {
-        return sendSuccess(res, []);
+        return sendSuccess(res, [], null, paginationMeta(page, limit, 0));
       }
       filter.building = building;
     }
@@ -40,11 +42,14 @@ const getUnits = asyncHandler(async (req, res) => {
     ];
   }
 
+  const total = await Unit.countDocuments(filter);
   const units = await Unit.find(filter)
     .populate('building', 'name code address')
-    .sort({ createdAt: -1 });
+    .sort({ createdAt: -1 })
+    .limit(limit)
+    .skip(skip);
 
-  return sendSuccess(res, units);
+  return sendSuccess(res, units, null, paginationMeta(page, limit, total));
 });
 
 const getUnitById = asyncHandler(async (req, res) => {

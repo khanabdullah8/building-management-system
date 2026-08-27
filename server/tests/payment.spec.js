@@ -443,6 +443,18 @@ describe('Payment API (/api/v1/payments)', () => {
       expect(res.status).toBe(200);
       expect(res.body.data.length).toBe(2);
     });
+
+    it('paginates results with page and limit and reports total', async () => {
+      for (let i = 0; i < 5; i += 1) {
+        await Payment.create({ bill: pendingBill._id, amount: 100, method: 'cash' });
+      }
+
+      const res = await authRequest(app, authToken).get('/api/v1/payments?page=2&limit=2');
+
+      expect(res.status).toBe(200);
+      expect(res.body.data).toHaveLength(2);
+      expect(res.body.meta).toMatchObject({ page: 2, limit: 2, total: 7, totalPages: 4 });
+    });
   });
 
   describe('GET /api/v1/payments/:id', () => {

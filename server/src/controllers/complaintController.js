@@ -7,6 +7,7 @@ const { sendSuccess } = require('../utils/apiResponse');
 const asyncHandler = require('../utils/asyncHandler');
 const { isBuildingAllowed, unitScopeFilter } = require('../utils/scope');
 const { record: recordAudit } = require('../services/auditService');
+const { getPagination, paginationMeta } = require('../utils/pagination');
 
 const complaintPopulation = {
   path: 'unit',
@@ -44,6 +45,7 @@ const getComplaints = asyncHandler(async (req, res) => {
   const { search } = req.query;
   const filter = {};
   const { buildingIds, unitId } = req.scope;
+  const { page, limit, skip } = getPagination(req.query);
 
   let scopeCondition = null;
 
@@ -92,11 +94,14 @@ const getComplaints = asyncHandler(async (req, res) => {
     Object.assign(filter, searchCondition);
   }
 
+  const total = await Complaint.countDocuments(filter);
   const complaints = await Complaint.find(filter)
     .populate(complaintPopulation)
-    .sort({ createdAt: -1 });
+    .sort({ createdAt: -1 })
+    .limit(limit)
+    .skip(skip);
 
-  return sendSuccess(res, complaints);
+  return sendSuccess(res, complaints, null, paginationMeta(page, limit, total));
 });
 
 const getComplaintById = asyncHandler(async (req, res) => {

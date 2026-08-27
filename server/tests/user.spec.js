@@ -57,6 +57,17 @@ describe('User API (/api/v1/users)', () => {
 
       expect(res.status).toBe(403);
     });
+
+    it('returns pagination metadata alongside the users array', async () => {
+      const res = await request(app)
+        .get('/api/v1/users?page=1&limit=2')
+        .set('Authorization', adminToken);
+
+      expect(res.status).toBe(200);
+      expect(Array.isArray(res.body.data)).toBe(true);
+      expect(res.body.meta).toMatchObject({ page: 1, limit: 2 });
+      expect(res.body.meta.total).toBeGreaterThanOrEqual(0);
+    });
   });
 
   describe('POST /api/v1/users', () => {

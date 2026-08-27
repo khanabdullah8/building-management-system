@@ -3,19 +3,30 @@ const Notification = require('../models/Notification');
 const ApiError = require('../utils/ApiError');
 const { sendSuccess } = require('../utils/apiResponse');
 const asyncHandler = require('../utils/asyncHandler');
+const { getPagination, paginationMeta } = require('../utils/pagination');
 
 const notificationPopulation = {
   path: 'building',
   select: 'name code',
 };
 
+const NOTIFICATION_DEFAULT_LIMIT = 100;
+
 const getNotifications = asyncHandler(async (req, res) => {
   // Notifications are user-owned data: always scoped to req.user.id.
-  const notifications = await Notification.find({ user: req.user.id })
-    .populate(notificationPopulation)
-    .sort({ createdAt: -1 });
+  const { page, limit, skip } = getPagination(req.query, {
+    defaultLimit: NOTIFICATION_DEFAULT_LIMIT,
+  });
 
-  return sendSuccess(res, notifications);
+  const filter = { user: req.user.id };
+  const total = await Notification.countDocuments(filter);
+  const notifications = await Notification.find(filter)
+    .populate(notificationPopulation)
+    .sort({ createdAt: -1 })
+    .limit(limit)
+    .skip(skip);
+
+  return sendSuccess(res, notifications, null, paginationMeta(page, limit, total));
 });
 
 const markNotificationRead = asyncHandler(async (req, res) => {

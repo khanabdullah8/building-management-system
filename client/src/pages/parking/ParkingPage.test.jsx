@@ -117,7 +117,7 @@ describe('ParkingPage CRUD functionality', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Unable to reach the server')
     await user.click(screen.getByRole('button', { name: 'Try again' }))
     expect(await screen.findByText('P-01')).toBeInTheDocument()
-    expect(http.get).toHaveBeenCalledWith('/v1/parking')
+    expect(http.get).toHaveBeenCalledWith('/v1/parking?page=1&limit=20')
   })
 
   it('uses server-side search and restores the full list when cleared', async () => {
@@ -126,9 +126,9 @@ describe('ParkingPage CRUD functionality', () => {
 
     await screen.findByText('P-01')
     await user.type(screen.getByRole('searchbox'), 'P-01')
-    await waitFor(() => expect(http.get).toHaveBeenCalledWith('/v1/parking?search=P-01'))
+    await waitFor(() => expect(http.get).toHaveBeenCalledWith('/v1/parking?page=1&limit=20&search=P-01'))
     await user.clear(screen.getByRole('searchbox'))
-    await waitFor(() => expect(http.get).toHaveBeenLastCalledWith('/v1/parking'))
+    await waitFor(() => expect(http.get).toHaveBeenLastCalledWith('/v1/parking?page=1&limit=20'))
   })
 
   it('shows empty state when no slots exist', async () => {
@@ -145,7 +145,7 @@ describe('ParkingPage CRUD functionality', () => {
     http.get.mockImplementation((url) => {
       if (url === '/v1/buildings') return Promise.resolve({ data: { success: true, data: buildings } })
       if (url === '/v1/units') return Promise.resolve({ data: { success: true, data: units } })
-      if (url === '/v1/parking?search=unknown') return Promise.resolve({ data: { success: true, data: [] } })
+      if (url === '/v1/parking?page=1&limit=20&search=unknown') return Promise.resolve({ data: { success: true, data: [] } })
       return Promise.resolve({ data: { success: true, data: parkingSlots } })
     })
     await user.type(screen.getByRole('searchbox'), 'unknown')
@@ -158,7 +158,7 @@ describe('ParkingPage CRUD functionality', () => {
     renderPage()
     await screen.findByText('P-01')
     await user.selectOptions(screen.getByLabelText('Filter by building'), 'building-1')
-    await waitFor(() => expect(http.get).toHaveBeenCalledWith('/v1/parking?building=building-1'))
+    await waitFor(() => expect(http.get).toHaveBeenCalledWith('/v1/parking?page=1&limit=20&building=building-1'))
   })
 
   it('filters by unit using the toolbar dropdown', async () => {
@@ -166,7 +166,7 @@ describe('ParkingPage CRUD functionality', () => {
     renderPage()
     await screen.findByText('P-01')
     await user.selectOptions(screen.getByLabelText('Filter by unit'), 'unit-1')
-    await waitFor(() => expect(http.get).toHaveBeenCalledWith('/v1/parking?unit=unit-1'))
+    await waitFor(() => expect(http.get).toHaveBeenCalledWith('/v1/parking?page=1&limit=20&unit=unit-1'))
   })
 
   it('opens Add Parking Slot modal and loads Building + Unit options', async () => {
