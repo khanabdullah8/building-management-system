@@ -208,6 +208,13 @@ const updateResident = asyncHandler(async (req, res) => {
     throw new ApiError(403, 'Forbidden: insufficient permissions');
   }
 
+  // Residents may only update residents that live in their own unit.
+  if (req.user.role === 'resident') {
+    if (!req.scope.unitId || !existingUnit || existingUnit._id.toString() !== req.scope.unitId) {
+      throw new ApiError(403, 'Forbidden: cannot access resources outside your unit');
+    }
+  }
+
   const { name, unit: unitId, phone, type, status } = req.body;
 
   // Building snapshot for the audit record — reflects a reassignment
@@ -288,6 +295,13 @@ const deleteResident = asyncHandler(async (req, res) => {
   const existingUnit = await Unit.findById(resident.unit).select('building').lean();
   if (existingUnit && !isBuildingAllowed(req.scope.buildingIds, existingUnit.building)) {
     throw new ApiError(403, 'Forbidden: insufficient permissions');
+  }
+
+  // Residents may only delete residents that live in their own unit.
+  if (req.user.role === 'resident') {
+    if (!req.scope.unitId || !existingUnit || existingUnit._id.toString() !== req.scope.unitId) {
+      throw new ApiError(403, 'Forbidden: cannot access resources outside your unit');
+    }
   }
 
   await Resident.findByIdAndDelete(id);

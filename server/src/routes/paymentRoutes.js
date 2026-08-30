@@ -6,6 +6,7 @@ const {
   updatePayment,
   deletePayment,
 } = require('../controllers/paymentController');
+const { authorize } = require('../middlewares/auth');
 
 const router = express.Router();
 
@@ -15,7 +16,7 @@ router.route('/')
 
 router.route('/:id')
   .get(getPaymentById)
-  .patch(updatePayment)
-  .delete(deletePayment);
+  .patch(authorize('admin', 'staff'), updatePayment)
+  .delete(authorize('admin', 'staff'), deletePayment);
 
 module.exports = router;

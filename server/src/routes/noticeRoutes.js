@@ -6,16 +6,17 @@ const {
   updateNotice,
   deleteNotice,
 } = require('../controllers/noticeController');
+const { authorize } = require('../middlewares/auth');
 
 const router = express.Router();
 
 router.route('/')
   .get(getNotices)
-  .post(createNotice);
+  .post(authorize('admin', 'staff'), createNotice);
 
 router.route('/:id')
   .get(getNoticeById)
-  .patch(updateNotice)
-  .delete(deleteNotice);
+  .patch(authorize('admin', 'staff'), updateNotice)
+  .delete(authorize('admin', 'staff'), deleteNotice);
 
 module.exports = router;

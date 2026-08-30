@@ -118,10 +118,11 @@ const getComplaintById = asyncHandler(async (req, res) => {
 
   const { buildingIds, unitId } = req.scope;
   if (req.user.role === 'resident') {
+    // Residents may only update complaints that belong to their own unit.
+    // Common-area complaints (unit === null) are staff/admin-managed.
     if (unitId) {
-      const complaintUnitId = complaint.unit ? complaint.unit._id.toString() : null;
-      const complaintBuildingId = complaint.building ? complaint.building.toString() : null;
-      if (complaintUnitId !== unitId && complaintBuildingId !== buildingIds[0]) {
+      const complaintUnitId = complaint.unit ? complaint.unit.toString() : null;
+      if (complaintUnitId !== unitId) {
         throw new ApiError(403, 'Forbidden: insufficient permissions');
       }
     } else {
@@ -248,10 +249,11 @@ const updateComplaint = asyncHandler(async (req, res) => {
 
   const { buildingIds, unitId } = req.scope;
   if (req.user.role === 'resident') {
+    // Resident: only own-unit complaints may be updated. Common-area (unit null)
+    // and cross-unit complaints are staff/admin-only.
     if (unitId) {
       const complaintUnitId = complaint.unit ? complaint.unit.toString() : null;
-      const complaintBuildingId = complaint.building ? complaint.building.toString() : null;
-      if (complaintUnitId !== unitId && complaintBuildingId !== buildingIds[0]) {
+      if (complaintUnitId !== unitId) {
         throw new ApiError(403, 'Forbidden: insufficient permissions');
       }
     } else {
@@ -281,6 +283,10 @@ const updateComplaint = asyncHandler(async (req, res) => {
 
   if (unitIdBody !== undefined) {
     if (unitIdBody === null) {
+      // Residents cannot convert their own-unit complaint into a common-area one.
+      if (req.user.role === 'resident') {
+        throw new ApiError(403, 'Forbidden: cannot change unit scope');
+      }
       complaint.unit = null;
     } else {
       const unit = await validateUnit(unitIdBody);
@@ -375,10 +381,11 @@ const deleteComplaint = asyncHandler(async (req, res) => {
 
   const { buildingIds, unitId } = req.scope;
   if (req.user.role === 'resident') {
+    // Residents may only delete complaints that belong to their own unit.
+    // Common-area complaints (unit === null) are staff/admin-managed.
     if (unitId) {
       const complaintUnitId = complaint.unit ? complaint.unit.toString() : null;
-      const complaintBuildingId = complaint.building ? complaint.building.toString() : null;
-      if (complaintUnitId !== unitId && complaintBuildingId !== buildingIds[0]) {
+      if (complaintUnitId !== unitId) {
         throw new ApiError(403, 'Forbidden: insufficient permissions');
       }
     } else {

@@ -6,6 +6,7 @@ const {
   updateMaintenanceRequest,
   deleteMaintenanceRequest,
 } = require('../controllers/maintenanceController');
+const { authorize } = require('../middlewares/auth');
 
 const router = express.Router();
 
@@ -15,7 +16,7 @@ router.route('/')
 
 router.route('/:id')
   .get(getMaintenanceRequestById)
-  .patch(updateMaintenanceRequest)
-  .delete(deleteMaintenanceRequest);
+  .patch(authorize('admin', 'staff'), updateMaintenanceRequest)
+  .delete(authorize('admin', 'staff'), deleteMaintenanceRequest);
 
 module.exports = router;

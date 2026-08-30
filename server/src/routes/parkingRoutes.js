@@ -6,16 +6,17 @@ const {
   updateParkingSlot,
   deleteParkingSlot,
 } = require('../controllers/parkingController');
+const { authorize } = require('../middlewares/auth');
 
 const router = express.Router();
 
 router.route('/')
   .get(getParkingSlots)
-  .post(createParkingSlot);
+  .post(authorize('admin', 'staff'), createParkingSlot);
 
 router.route('/:id')
   .get(getParkingSlotById)
-  .patch(updateParkingSlot)
-  .delete(deleteParkingSlot);
+  .patch(authorize('admin', 'staff'), updateParkingSlot)
+  .delete(authorize('admin', 'staff'), deleteParkingSlot);
 
 module.exports = router;

@@ -6,16 +6,17 @@ const {
   updateBill,
   deleteBill,
 } = require('../controllers/billingController');
+const { authorize } = require('../middlewares/auth');
 
 const router = express.Router();
 
 router.route('/')
   .get(getBills)
-  .post(createBill);
+  .post(authorize('admin', 'staff'), createBill);
 
 router.route('/:id')
   .get(getBillById)
-  .patch(updateBill)
-  .delete(deleteBill);
+  .patch(authorize('admin', 'staff'), updateBill)
+  .delete(authorize('admin', 'staff'), deleteBill);
 
 module.exports = router;
