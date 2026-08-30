@@ -1,5 +1,6 @@
 const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 100;
+const DEFAULT_MAX_PAGE = 10000;
 
 function toPositiveInt(value, fallback) {
   const parsed = parseInt(value, 10);
@@ -12,10 +13,11 @@ function toPositiveInt(value, fallback) {
 function getPagination(query = {}, options = {}) {
   const defaultLimit = options.defaultLimit || DEFAULT_LIMIT;
   const maxLimit = options.maxLimit || MAX_LIMIT;
+  const maxPage = options.maxPage || DEFAULT_MAX_PAGE;
 
-  const page = toPositiveInt(query.page, 1);
+  const page = Math.min(toPositiveInt(query.page, 1), maxPage);
   const limit = Math.min(toPositiveInt(query.limit, defaultLimit), maxLimit);
-  const skip = (page - 1) * limit;
+  const skip = Math.min((page - 1) * limit, (maxPage - 1) * maxLimit);
 
   return { page, limit, skip };
 }
@@ -25,4 +27,4 @@ function paginationMeta(page, limit, total) {
   return { page, limit, total, totalPages };
 }
 
-module.exports = { getPagination, paginationMeta, DEFAULT_LIMIT, MAX_LIMIT };
+module.exports = { getPagination, paginationMeta, DEFAULT_LIMIT, MAX_LIMIT, DEFAULT_MAX_PAGE };

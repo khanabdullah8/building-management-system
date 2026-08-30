@@ -172,6 +172,7 @@ const createResident = asyncHandler(async (req, res) => {
     phone: phone !== undefined ? phone.trim() : '',
     type,
     status,
+    createdBy: req.user.id,
   });
 
   try {
@@ -208,10 +209,13 @@ const updateResident = asyncHandler(async (req, res) => {
     throw new ApiError(403, 'Forbidden: insufficient permissions');
   }
 
-  // Residents may only update residents that live in their own unit.
+  // Residents may only update residents they created in their own unit.
   if (req.user.role === 'resident') {
     if (!req.scope.unitId || !existingUnit || existingUnit._id.toString() !== req.scope.unitId) {
       throw new ApiError(403, 'Forbidden: cannot access resources outside your unit');
+    }
+    if (!resident.createdBy || resident.createdBy.toString() !== req.user.id) {
+      throw new ApiError(403, 'Forbidden: you can only manage residents you created');
     }
   }
 
@@ -297,10 +301,13 @@ const deleteResident = asyncHandler(async (req, res) => {
     throw new ApiError(403, 'Forbidden: insufficient permissions');
   }
 
-  // Residents may only delete residents that live in their own unit.
+  // Residents may only delete residents they created in their own unit.
   if (req.user.role === 'resident') {
     if (!req.scope.unitId || !existingUnit || existingUnit._id.toString() !== req.scope.unitId) {
       throw new ApiError(403, 'Forbidden: cannot access resources outside your unit');
+    }
+    if (!resident.createdBy || resident.createdBy.toString() !== req.user.id) {
+      throw new ApiError(403, 'Forbidden: you can only manage residents you created');
     }
   }
 

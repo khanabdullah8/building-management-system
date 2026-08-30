@@ -17,6 +17,11 @@ const visitorSchema = new mongoose.Schema(
       ref: 'Unit',
       required: [true, 'Unit reference is required'],
     },
+    createdBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null,
+    },
     purpose: {
       type: String,
       trim: true,

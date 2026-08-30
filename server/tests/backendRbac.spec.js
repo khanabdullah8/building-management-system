@@ -14,6 +14,7 @@ const Notice = require('../src/models/Notice');
 const Parking = require('../src/models/Parking');
 const Bill = require('../src/models/Bill');
 const Payment = require('../src/models/Payment');
+const Visitor = require('../src/models/Visitor');
 const { startMemoryDb, stopMemoryDb } = require('./helpers/db');
 const { getAuthToken } = require('./helpers/auth');
 
@@ -343,6 +344,154 @@ describe('Phase 25: Backend RBAC Hardening', () => {
       const recreated = await Resident.create({ name: 'Other Unit Resident', unit: unitB1._id, phone: '222', type: 'owner', status: 'active' });
       const deleted = await auth(adminUser).delete(`/api/v1/residents/${recreated._id}`);
       expect(deleted.status).toBe(200);
+    });
+  });
+
+  describe('Phase 29 M-1: same-unit ownership for residents/visitors', () => {
+    let coResidentUser;
+    let residentCo;
+    let coCreatedVisitor, coCreatedResident;
+    let legacyResident, legacyVisitor;
+
+    beforeAll(async () => {
+      // A co-inhabitant in the SAME unit as residentUser (both scoped to unitA1).
+      residentCo = await Resident.create({ name: 'Co Resident', unit: unitA1._id, phone: '333', type: 'tenant', status: 'active' });
+      coResidentUser = await User.create({
+        name: 'Co Resident User',
+        email: 'rbac-co-resident@test.local',
+        password: 'password123',
+        role: 'resident',
+        status: 'active',
+        resident: residentCo._id,
+      });
+
+      // Records the co-inhabitant creates are attributed to them via createdBy.
+      const vis = await auth(coResidentUser)
+        .post('/api/v1/visitors')
+        .send({ name: 'Co visitor', unit: unitA1._id.toString(), purpose: 'Delivery' });
+      coCreatedVisitor = vis.body.data.id;
+
+      const res = await auth(coResidentUser)
+        .post('/api/v1/residents')
+        .send({ name: 'Co resident rec', unit: unitA1._id.toString(), phone: '444', type: 'tenant', status: 'active' });
+      coCreatedResident = res.body.data.id;
+
+      // Legacy records created directly (no createdBy) in the same unit.
+      legacyResident = await Resident.create({ name: 'Legacy Resident', unit: unitA1._id, phone: '555', type: 'tenant', status: 'active' });
+      legacyVisitor = await Visitor.create({ name: 'Legacy Visitor', unit: unitA1._id, purpose: 'Guest' });
+    });
+
+    afterAll(async () => {
+      await Visitor.deleteMany({ _id: { $in: [coCreatedVisitor, legacyVisitor] } });
+      await Resident.deleteMany({ _id: { $in: [coCreatedResident, legacyResident, residentCo._id] } });
+      await User.deleteMany({ _id: coResidentUser._id });
+    });
+
+    it('(a) resident cannot update a resident a co-inhabitant created in the same unit (403)', async () => {
+      const res = await auth(residentUser)
+        .patch(`/api/v1/residents/${coCreatedResident}`)
+        .send({ name: 'Hacked co resident' });
+      expect(res.status).toBe(403);
+    });
+
+    it('(b) resident cannot delete a resident a co-inhabitant created in the same unit (403)', async () => {
+      const res = await auth(residentUser).delete(`/api/v1/residents/${coCreatedResident}`);
+      expect(res.status).toBe(403);
+      expect(await Resident.findById(coCreatedResident)).not.toBeNull();
+    });
+
+    it('(c) resident cannot update a visitor a co-inhabitant created in the same unit (403)', async () => {
+      const res = await auth(residentUser)
+        .patch(`/api/v1/visitors/${coCreatedVisitor}`)
+        .send({ name: 'Hacked co visitor' });
+      expect(res.status).toBe(403);
+    });
+
+    it('(d) resident cannot delete a visitor a co-inhabitant created in the same unit (403)', async () => {
+      const res = await auth(residentUser).delete(`/api/v1/visitors/${coCreatedVisitor}`);
+      expect(res.status).toBe(403);
+      expect(await Visitor.findById(coCreatedVisitor)).not.toBeNull();
+    });
+
+    it('(legacy) resident cannot manage a same-unit record with no createdBy (403)', async () => {
+      const upd = await auth(residentUser)
+        .patch(`/api/v1/residents/${legacyResident._id}`)
+        .send({ name: 'Hacked legacy' });
+      expect(upd.status).toBe(403);
+      const del = await auth(residentUser).delete(`/api/v1/residents/${legacyResident._id}`);
+      expect(del.status).toBe(403);
+    });
+
+    it('(legacy) resident cannot manage a same-unit visitor with no createdBy (403)', async () => {
+      const upd = await auth(residentUser)
+        .patch(`/api/v1/visitors/${legacyVisitor._id}`)
+        .send({ name: 'Hacked legacy v' });
+      expect(upd.status).toBe(403);
+      const del = await auth(residentUser).delete(`/api/v1/visitors/${legacyVisitor._id}`);
+      expect(del.status).toBe(403);
+    });
+
+    it('(e) resident can create and then update/delete their own visitor in their unit', async () => {
+      const created = await auth(residentUser)
+        .post('/api/v1/visitors')
+        .send({ name: 'Own visitor M1', unit: unitA1._id.toString(), purpose: 'Delivery' });
+      expect(created.status).toBe(201);
+      const ownVisitor = created.body.data.id;
+      expect(created.body.data.createdBy).toBe(residentUser.id);
+
+      const upd = await auth(residentUser)
+        .patch(`/api/v1/visitors/${ownVisitor}`)
+        .send({ name: 'Own visitor M1 updated' });
+      expect(upd.status).toBe(200);
+
+      const del = await auth(residentUser).delete(`/api/v1/visitors/${ownVisitor}`);
+      expect(del.status).toBe(200);
+    });
+
+    it('(e2) resident can create and then update/delete their own resident record', async () => {
+      const created = await auth(residentUser)
+        .post('/api/v1/residents')
+        .send({ name: 'Own resident M1', unit: unitA1._id.toString(), phone: '666', type: 'tenant', status: 'active' });
+      expect(created.status).toBe(201);
+      const ownResident = created.body.data.id;
+
+      const upd = await auth(residentUser)
+        .patch(`/api/v1/residents/${ownResident}`)
+        .send({ name: 'Own resident M1 updated' });
+      expect(upd.status).toBe(200);
+
+      const del = await auth(residentUser).delete(`/api/v1/residents/${ownResident}`);
+      expect(del.status).toBe(200);
+    });
+
+    it('(f) admin can update and delete a co-inhabitant-created same-unit resident', async () => {
+      const upd = await auth(adminUser)
+        .patch(`/api/v1/residents/${coCreatedResident}`)
+        .send({ name: 'Admin edit co resident' });
+      expect(upd.status).toBe(200);
+
+      const del = await auth(adminUser).delete(`/api/v1/residents/${coCreatedResident}`);
+      expect(del.status).toBe(200);
+    });
+
+    it('(g) staff can manage a legacy same-unit resident with no createdBy', async () => {
+      const upd = await auth(staffUser)
+        .patch(`/api/v1/residents/${legacyResident._id}`)
+        .send({ name: 'Staff edit legacy' });
+      expect(upd.status).toBe(200);
+
+      const del = await auth(staffUser).delete(`/api/v1/residents/${legacyResident._id}`);
+      expect(del.status).toBe(200);
+    });
+
+    it('(g2) admin can manage a legacy same-unit visitor with no createdBy', async () => {
+      const upd = await auth(adminUser)
+        .patch(`/api/v1/visitors/${legacyVisitor._id}`)
+        .send({ name: 'Admin edit legacy v' });
+      expect(upd.status).toBe(200);
+
+      const del = await auth(adminUser).delete(`/api/v1/visitors/${legacyVisitor._id}`);
+      expect(del.status).toBe(200);
     });
   });
 

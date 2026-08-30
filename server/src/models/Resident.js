@@ -12,6 +12,11 @@ const residentSchema = new mongoose.Schema(
       ref: 'Unit',
       required: [true, 'Unit reference is required'],
     },
+    createdBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null,
+    },
     phone: {
       type: String,
       trim: true,

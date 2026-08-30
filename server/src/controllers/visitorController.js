@@ -154,6 +154,7 @@ const createVisitor = asyncHandler(async (req, res) => {
     purpose: purpose !== undefined ? purpose.trim() : '',
     checkInAt: checkInAt || new Date(),
     checkOutAt: null,
+    createdBy: req.user.id,
   };
 
   const visitor = await Visitor.create(visitorData);
@@ -192,6 +193,9 @@ const updateVisitor = asyncHandler(async (req, res) => {
   if (req.user.role === 'resident') {
     if (!unitId || !existingUnit || existingUnit._id.toString() !== unitId) {
       throw new ApiError(403, 'Forbidden: insufficient permissions');
+    }
+    if (!visitor.createdBy || visitor.createdBy.toString() !== req.user.id) {
+      throw new ApiError(403, 'Forbidden: you can only manage visitors you created');
     }
   } else if (buildingIds !== null) {
     if (existingUnit && !isBuildingAllowed(buildingIds, existingUnit.building)) {
@@ -298,6 +302,17 @@ const deleteVisitor = asyncHandler(async (req, res) => {
     const existingUnit = await Unit.findById(visitor.unit).select('building').lean();
     if (existingUnit && !isBuildingAllowed(buildingIds, existingUnit.building)) {
       throw new ApiError(403, 'Forbidden: insufficient permissions');
+    }
+  }
+
+  // Residents may only delete visitors they created in their own unit.
+  if (req.user.role === 'resident') {
+    const visitorUnit = await Unit.findById(visitor.unit).select('_id').lean();
+    if (!req.scope.unitId || !visitorUnit || visitorUnit._id.toString() !== req.scope.unitId) {
+      throw new ApiError(403, 'Forbidden: cannot access resources outside your unit');
+    }
+    if (!visitor.createdBy || visitor.createdBy.toString() !== req.user.id) {
+      throw new ApiError(403, 'Forbidden: you can only manage visitors you created');
     }
   }
 

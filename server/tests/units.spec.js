@@ -206,6 +206,29 @@ describe('Units API (/api/v1/units)', () => {
       expect(invalid.body.meta).toMatchObject({ page: 1, limit: 20 });
       expect(invalid.body.data).toHaveLength(2);
     });
+
+    it('Phase 29 L-3: treats regex metacharacters in search literally', async () => {
+      await Unit.create([
+        { unitNumber: 'SEC-101', building: sampleBuilding._id, type: '2BHK+Plus', floor: 2 },
+        { unitNumber: 'SEC-102', building: sampleBuilding._id, type: 'Data(Special)', floor: 3 },
+      ]);
+
+      const plus = await authRequest(app, authToken).get(`/api/v1/units?search=${encodeURIComponent('2BHK+Plus')}`);
+      expect(plus.status).toBe(200);
+      expect(plus.body.data).toHaveLength(1);
+      expect(plus.body.data[0].unitNumber).toBe('SEC-101');
+
+      const parens = await authRequest(app, authToken).get(`/api/v1/units?search=${encodeURIComponent('Data(Special)')}`);
+      expect(parens.status).toBe(200);
+      expect(parens.body.data).toHaveLength(1);
+      expect(parens.body.data[0].unitNumber).toBe('SEC-102');
+    });
+
+    it('Phase 29 L-4: caps an extremely large page value', async () => {
+      const res = await authRequest(app, authToken).get('/api/v1/units?page=999999999999&limit=100');
+      expect(res.status).toBe(200);
+      expect(res.body.meta.page).toBe(10000);
+    });
   });
 
   describe('GET /api/v1/units/:id', () => {
