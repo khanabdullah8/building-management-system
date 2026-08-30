@@ -130,6 +130,52 @@ describe('Building API (/api/v1/buildings)', () => {
       expect(res.body.data[0].code).toBe('BLD-A');
     });
 
+    it('Phase 31 M-1: treats regex metacharacters in search as plain text', async () => {
+      const code = 'BLD+(M)[X]*^$|.\\?';
+      await Building.create([
+        { code: 'BLD-ALPHA', name: 'Literal Tower', address: '1 Road' },
+        { code, name: `Tower ${code}`, address: `Street ${code}` },
+      ]);
+
+      // A payload containing every escaped metacharacter must match the literal
+      // text instead of being interpreted as a regular expression.
+      const res = await authRequest(app, authToken).get(
+        `/api/v1/buildings?search=${encodeURIComponent(code)}`
+      );
+
+      expect(res.status).toBe(200);
+      expect(res.body.data).toHaveLength(1);
+      expect(res.body.data[0].code).toBe(code);
+    });
+
+    it('Phase 31 M-1: does not 500 on an unbalanced/malformed regex', async () => {
+      await Building.create({ code: 'BLD-JUNK', name: 'Stable Building' });
+
+      const res = await authRequest(app, authToken).get(
+        `/api/v1/buildings?search=${encodeURIComponent('(((')}`
+      );
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(Array.isArray(res.body.data)).toBe(true);
+    });
+
+    it('Phase 31 M-1: treats a regex-looking payload as literal text', async () => {
+      await Building.create({ code: 'BLD-CATA', name: 'Catastrophic Building' });
+      await Building.create({ code: 'BLD-PLAIN', name: '(a+)+$' });
+
+      // (a+)+$ would cause catastrophic backtracking if interpreted as a regex;
+      // it must instead be matched as plain text so only the literal name hits.
+      const res = await authRequest(app, authToken).get(
+        `/api/v1/buildings?search=${encodeURIComponent('(a+)+$')}`
+      );
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data).toHaveLength(1);
+      expect(res.body.data[0].code).toBe('BLD-PLAIN');
+    });
+
     it('returns pagination metadata alongside the data array', async () => {
       const res = await authRequest(app, authToken).get('/api/v1/buildings');
 

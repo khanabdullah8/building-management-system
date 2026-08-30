@@ -25,7 +25,8 @@ const getBuildings = asyncHandler(async (req, res) => {
   }
 
   if (search) {
-    const searchRegex = new RegExp(search.trim(), 'i');
+    const escaped = search.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const searchRegex = new RegExp(escaped, 'i');
     filter.$or = [
       { code: searchRegex },
       { name: searchRegex },
