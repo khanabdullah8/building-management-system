@@ -9,6 +9,8 @@ const Building = require('../src/models/Building');
 const Unit = require('../src/models/Unit');
 const Bill = require('../src/models/Bill');
 const Payment = require('../src/models/Payment');
+const Resident = require('../src/models/Resident');
+const User = require('../src/models/User');
 const { startMemoryDb, stopMemoryDb } = require('./helpers/db');
 const { createTestAdmin, removeTestAdmin, getAuthToken, authRequest } = require('./helpers/auth');
 
@@ -763,6 +765,69 @@ describe('Payment API (/api/v1/payments)', () => {
 
       expect(res.status).toBe(404);
       expect(res.body.message).toBe('Payment not found');
+    });
+  });
+
+  describe('Resident scoped GET /api/v1/payments?bill= (Phase 27 H-1)', () => {
+    let residentAUser, residentBUser;
+    let unitA, unitB;
+    let billA, billB;
+
+    beforeEach(async () => {
+      await Payment.deleteMany({});
+      await Bill.deleteMany({});
+      await Unit.deleteMany({});
+      await Building.deleteMany({});
+      await Resident.deleteMany({});
+      await User.deleteMany({ role: 'resident' });
+
+      const buildingA = await Building.create({ code: 'R-PAY-A', name: 'Resident Building A' });
+      const buildingB = await Building.create({ code: 'R-PAY-B', name: 'Resident Building B' });
+
+      unitA = await Unit.create({ unitNumber: 'RA-101', building: buildingA._id });
+      unitB = await Unit.create({ unitNumber: 'RB-101', building: buildingB._id });
+
+      const residentA = await Resident.create({ name: 'Resident A', unit: unitA._id, phone: '1111111111', type: 'owner', status: 'active' });
+      const residentB = await Resident.create({ name: 'Resident B', unit: unitB._id, phone: '2222222222', type: 'owner', status: 'active' });
+
+      residentAUser = await User.create({ name: 'Res A', email: 'resa-pay@test.local', password: 'password123', role: 'resident', status: 'active', resident: residentA._id });
+      residentBUser = await User.create({ name: 'Res B', email: 'resb-pay@test.local', password: 'password123', role: 'resident', status: 'active', resident: residentB._id });
+
+      billA = await Bill.create({ unit: unitA._id, period: 'Jan 2026', amount: 1000, status: 'pending' });
+      billB = await Bill.create({ unit: unitB._id, period: 'Jan 2026', amount: 9000, status: 'pending' });
+
+      await Payment.create({ bill: billA._id, amount: 1000, method: 'upi', status: 'completed' });
+      await Payment.create({ bill: billB._id, amount: 9000, method: 'cash', status: 'completed' });
+    });
+
+    afterEach(async () => {
+      await User.deleteMany({ role: 'resident' });
+      await Resident.deleteMany({});
+    });
+
+    it('does not leak another unit resident payments when filtered by their bill', async () => {
+      const token = `Bearer ${getAuthToken(residentAUser)}`;
+      const res = await authRequest(app, token).get(`/api/v1/payments?bill=${billB._id}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.data).toEqual([]);
+    });
+
+    it('resident can still retrieve payments for their own bill', async () => {
+      const token = `Bearer ${getAuthToken(residentAUser)}`;
+      const res = await authRequest(app, token).get(`/api/v1/payments?bill=${billA._id}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.length).toBe(1);
+      expect(res.body.data[0].bill.id).toBe(billA._id.toString());
+    });
+
+    it('resident B cannot read resident A payments via ?bill=', async () => {
+      const token = `Bearer ${getAuthToken(residentBUser)}`;
+      const res = await authRequest(app, token).get(`/api/v1/payments?bill=${billA._id}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.data).toEqual([]);
     });
   });
 });

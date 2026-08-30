@@ -8,6 +8,8 @@ const app = require('../src/app');
 const Building = require('../src/models/Building');
 const Unit = require('../src/models/Unit');
 const Complaint = require('../src/models/Complaint');
+const Resident = require('../src/models/Resident');
+const User = require('../src/models/User');
 const { startMemoryDb, stopMemoryDb } = require('./helpers/db');
 const { createTestAdmin, removeTestAdmin, getAuthToken, authRequest } = require('./helpers/auth');
 
@@ -486,6 +488,77 @@ describe('Complaints API (/api/v1/complaints)', () => {
 
       expect(res.status).toBe(404);
       expect(res.body.message).toBe('Complaint not found');
+    });
+  });
+
+  describe('Resident complaint scope (Phase 27 M-1/M-2)', () => {
+    let residentAUser, residentBUser;
+    let bldA, bldB, unitA, unitB;
+
+    beforeEach(async () => {
+      await Complaint.deleteMany({});
+      await Unit.deleteMany({});
+      await Building.deleteMany({});
+      await Resident.deleteMany({});
+      await User.deleteMany({ role: 'resident' });
+
+      bldA = await Building.create({ code: 'R-CMP-A', name: 'Resident Bldg A' });
+      bldB = await Building.create({ code: 'R-CMP-B', name: 'Resident Bldg B' });
+      unitA = await Unit.create({ unitNumber: 'RA-1', building: bldA._id });
+      unitB = await Unit.create({ unitNumber: 'RB-1', building: bldB._id });
+
+      const residentA = await Resident.create({ name: 'Res A', unit: unitA._id, phone: '1111111111', type: 'owner', status: 'active' });
+      const residentB = await Resident.create({ name: 'Res B', unit: unitB._id, phone: '2222222222', type: 'owner', status: 'active' });
+
+      residentAUser = await User.create({ name: 'Res A U', email: 'resa-cmp@test.local', password: 'password123', role: 'resident', status: 'active', resident: residentA._id });
+      residentBUser = await User.create({ name: 'Res B U', email: 'resb-cmp@test.local', password: 'password123', role: 'resident', status: 'active', resident: residentB._id });
+    });
+
+    afterEach(async () => {
+      await User.deleteMany({ role: 'resident' });
+      await Resident.deleteMany({});
+    });
+
+    describe('GET /api/v1/complaints/:id detail scope (M-1)', () => {
+      it('resident can GET own-building common-area complaint', async () => {
+        const common = await Complaint.create({ subject: 'Lobby light', unit: null, building: bldA._id, location: 'Lobby', priority: 'low', status: 'open' });
+        const res = await authRequest(app, `Bearer ${getAuthToken(residentAUser)}`).get(`/api/v1/complaints/${common._id}`);
+        expect(res.status).toBe(200);
+      });
+
+      it('resident is denied another-building common-area complaint', async () => {
+        const commonB = await Complaint.create({ subject: 'B lobby', unit: null, building: bldB._id, location: 'Lobby B', priority: 'low', status: 'open' });
+        const res = await authRequest(app, `Bearer ${getAuthToken(residentAUser)}`).get(`/api/v1/complaints/${commonB._id}`);
+        expect(res.status).toBe(403);
+      });
+
+      it('resident is denied another-unit private complaint', async () => {
+        const privateOther = await Complaint.create({ subject: 'Unit B leak', unit: unitB._id, building: bldB._id, priority: 'low', status: 'open' });
+        const res = await authRequest(app, `Bearer ${getAuthToken(residentAUser)}`).get(`/api/v1/complaints/${privateOther._id}`);
+        expect(res.status).toBe(403);
+      });
+
+      it('resident can GET own-unit private complaint', async () => {
+        const ownUnit = await Complaint.create({ subject: 'My leak', unit: unitA._id, building: bldA._id, priority: 'low', status: 'open' });
+        const res = await authRequest(app, `Bearer ${getAuthToken(residentAUser)}`).get(`/api/v1/complaints/${ownUnit._id}`);
+        expect(res.status).toBe(200);
+      });
+    });
+
+    describe('POST /api/v1/complaints common-area creation (M-2)', () => {
+      it('resident is denied creating a common-area complaint', async () => {
+        const res = await authRequest(app, `Bearer ${getAuthToken(residentAUser)}`)
+          .post('/api/v1/complaints')
+          .send({ subject: 'Common issue', location: 'Gate', building: bldA._id, priority: 'low', status: 'open' });
+        expect(res.status).toBe(403);
+      });
+
+      it('resident can still create a complaint for their own unit', async () => {
+        const res = await authRequest(app, `Bearer ${getAuthToken(residentAUser)}`)
+          .post('/api/v1/complaints')
+          .send({ subject: 'My own issue', unit: unitA._id, priority: 'medium', status: 'open' });
+        expect(res.status).toBe(201);
+      });
     });
   });
 });

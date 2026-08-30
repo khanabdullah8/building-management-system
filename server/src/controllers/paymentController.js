@@ -104,10 +104,22 @@ const getPayments = asyncHandler(async (req, res) => {
     if (!mongoose.Types.ObjectId.isValid(bill)) {
       return emptyResult();
     }
-    if (filter.bill && filter.bill.$in) {
-      filter.bill = { $in: [...filter.bill.$in, new mongoose.Types.ObjectId(bill)] };
+
+    const requestedBillId = new mongoose.Types.ObjectId(bill);
+
+    if (req.user.role === 'resident') {
+      const allowedBillIds = filter.bill && filter.bill.$in ? filter.bill.$in : [];
+      const isOwnBill = allowedBillIds.some(
+        (id) => id.toString() === requestedBillId.toString()
+      );
+      if (!isOwnBill) {
+        return emptyResult();
+      }
+      filter.bill = { $in: [requestedBillId] };
+    } else if (filter.bill && filter.bill.$in) {
+      filter.bill = { $in: [...filter.bill.$in, requestedBillId] };
     } else {
-      filter.bill = bill;
+      filter.bill = requestedBillId;
     }
   }
 

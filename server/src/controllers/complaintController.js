@@ -118,14 +118,25 @@ const getComplaintById = asyncHandler(async (req, res) => {
 
   const { buildingIds, unitId } = req.scope;
   if (req.user.role === 'resident') {
-    // Residents may only update complaints that belong to their own unit.
-    // Common-area complaints (unit === null) are staff/admin-managed.
-    if (unitId) {
-      const complaintUnitId = complaint.unit ? complaint.unit.toString() : null;
-      if (complaintUnitId !== unitId) {
-        throw new ApiError(403, 'Forbidden: insufficient permissions');
-      }
-    } else {
+    // Residents may view complaints that belong to their own unit, or
+    // common-area complaints (unit === null) within their own building.
+    // Cross-unit private complaints and other building common-area
+    // complaints are denied.
+    if (!unitId) {
+      throw new ApiError(403, 'Forbidden: insufficient permissions');
+    }
+    const complaintUnitRaw = complaint.unit;
+    const complaintUnitId = complaintUnitRaw
+      ? (complaintUnitRaw._id ? complaintUnitRaw._id.toString() : complaintUnitRaw.toString())
+      : null;
+    const isOwnUnitComplaint = complaintUnitId !== null && complaintUnitId === unitId;
+    const isOwnBuildingCommonArea =
+      complaintUnitId === null &&
+      complaint.building &&
+      buildingIds &&
+      buildingIds[0] &&
+      complaint.building.toString() === buildingIds[0].toString();
+    if (!isOwnUnitComplaint && !isOwnBuildingCommonArea) {
       throw new ApiError(403, 'Forbidden: insufficient permissions');
     }
   } else if (buildingIds !== null) {
@@ -194,6 +205,12 @@ const createComplaint = asyncHandler(async (req, res) => {
   }
 
   if (!hasUnit) {
+    // Common-area (unit === null) complaints are staff/admin-managed.
+    // Residents may only create complaints for their own unit.
+    if (req.user.role === 'resident') {
+      throw new ApiError(403, 'Forbidden: residents may only report complaints for their own unit');
+    }
+
     if (!buildingIdFromBody) {
       throw new ApiError(400, 'Building ID is required for common-area complaints', {
         building: 'Building ID is required for common-area complaints',
