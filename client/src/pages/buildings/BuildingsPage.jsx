@@ -9,14 +9,18 @@ import Badge from '../../components/ui/Badge'
 import Modal from '../../components/ui/Modal'
 import Pagination from '../../components/ui/Pagination'
 import http from '../../api/http'
+import { useAuth } from '../../hooks/useAuth'
 import { statusTone } from '../../utils/status'
 import { buildListParams } from '../../utils/queryParams'
+import { canManageBuildings } from '../../utils/permissions'
 import BuildingModal from './BuildingModal'
 import '../../components/common/ModulePage.css'
 
 const PAGE_SIZE = 20
 
 function BuildingsPage() {
+  const { user } = useAuth()
+  const canManage = canManageBuildings(user?.role)
   const [buildings, setBuildings] = useState([])
   const [query, setQuery] = useState('')
   const [page, setPage] = useState(1)
@@ -109,16 +113,17 @@ function BuildingsPage() {
     {
       key: 'actions',
       header: 'Actions',
-      render: (_, building) => (
-        <div className="building-row-actions">
-          <button type="button" className="btn btn-secondary" onClick={() => setEditingBuilding(building)}>
-            Edit
-          </button>
-          <button type="button" className="btn btn-danger" onClick={() => setBuildingToDelete(building)}>
-            Delete
-          </button>
-        </div>
-      ),
+      render: (_, building) =>
+        canManage ? (
+          <div className="building-row-actions">
+            <button type="button" className="btn btn-secondary" onClick={() => setEditingBuilding(building)}>
+              Edit
+            </button>
+            <button type="button" className="btn btn-danger" onClick={() => setBuildingToDelete(building)}>
+              Delete
+            </button>
+          </div>
+        ) : null,
     },
   ]
 
@@ -146,9 +151,11 @@ function BuildingsPage() {
         title="Buildings"
         description="Manage building properties, blocks and floors."
         actions={
-          <button type="button" className="btn btn-primary" onClick={() => setEditingBuilding({})}>
-            New Building
-          </button>
+          canManage ? (
+            <button type="button" className="btn btn-primary" onClick={() => setEditingBuilding({})}>
+              New Building
+            </button>
+          ) : undefined
         }
       />
 

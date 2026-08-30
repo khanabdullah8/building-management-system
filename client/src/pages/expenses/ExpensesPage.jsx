@@ -9,15 +9,19 @@ import Badge from '../../components/ui/Badge'
 import Modal from '../../components/ui/Modal'
 import Pagination from '../../components/ui/Pagination'
 import http from '../../api/http'
+import { useAuth } from '../../hooks/useAuth'
 import { statusTone } from '../../utils/status'
 import { formatCurrency, formatDate } from '../../utils/formatters'
 import { buildListParams } from '../../utils/queryParams'
+import { canManageExpenses } from '../../utils/permissions'
 import ExpenseModal from './ExpenseModal'
 import './ExpensesPage.css'
 
 const PAGE_SIZE = 20
 
 function ExpensesPage() {
+  const { user } = useAuth()
+  const canManage = canManageExpenses(user?.role)
   const [expenses, setExpenses] = useState([])
   const [query, setQuery] = useState('')
   const [page, setPage] = useState(1)
@@ -140,16 +144,17 @@ function ExpensesPage() {
     {
       key: 'actions',
       header: 'Actions',
-      render: (_, expense) => (
-        <div className="expense-row-actions">
-          <button type="button" className="btn btn-secondary" onClick={() => setEditingExpense(expense)}>
-            Edit
-          </button>
-          <button type="button" className="btn btn-danger" onClick={() => setExpenseToDelete(expense)}>
-            Delete
-          </button>
-        </div>
-      ),
+      render: (_, expense) =>
+        canManage ? (
+          <div className="expense-row-actions">
+            <button type="button" className="btn btn-secondary" onClick={() => setEditingExpense(expense)}>
+              Edit
+            </button>
+            <button type="button" className="btn btn-danger" onClick={() => setExpenseToDelete(expense)}>
+              Delete
+            </button>
+          </div>
+        ) : null,
     },
   ]
 
@@ -177,9 +182,11 @@ function ExpensesPage() {
         title="Expenses"
         description="Record and review building expenses."
         actions={
-          <button type="button" className="btn btn-primary" onClick={() => setEditingExpense({})}>
-            Add Expense
-          </button>
+          canManage ? (
+            <button type="button" className="btn btn-primary" onClick={() => setEditingExpense({})}>
+              Add Expense
+            </button>
+          ) : undefined
         }
       />
 

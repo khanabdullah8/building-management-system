@@ -9,14 +9,18 @@ import Badge from '../../components/ui/Badge'
 import Modal from '../../components/ui/Modal'
 import Pagination from '../../components/ui/Pagination'
 import http from '../../api/http'
+import { useAuth } from '../../hooks/useAuth'
 import { statusTone } from '../../utils/status'
 import { buildListParams } from '../../utils/queryParams'
+import { canManageUnits } from '../../utils/permissions'
 import UnitModal from './UnitModal'
 import '../../components/common/ModulePage.css'
 
 const PAGE_SIZE = 20
 
 function UnitsPage() {
+  const { user } = useAuth()
+  const canManage = canManageUnits(user?.role)
   const [units, setUnits] = useState([])
   const [query, setQuery] = useState('')
   const [page, setPage] = useState(1)
@@ -113,16 +117,17 @@ function UnitsPage() {
     {
       key: 'actions',
       header: 'Actions',
-      render: (_, unit) => (
-        <div className="unit-row-actions">
-          <button type="button" className="btn btn-secondary" onClick={() => setEditingUnit(unit)}>
-            Edit
-          </button>
-          <button type="button" className="btn btn-danger" onClick={() => setUnitToDelete(unit)}>
-            Delete
-          </button>
-        </div>
-      ),
+      render: (_, unit) =>
+        canManage ? (
+          <div className="unit-row-actions">
+            <button type="button" className="btn btn-secondary" onClick={() => setEditingUnit(unit)}>
+              Edit
+            </button>
+            <button type="button" className="btn btn-danger" onClick={() => setUnitToDelete(unit)}>
+              Delete
+            </button>
+          </div>
+        ) : null,
     },
   ]
 
@@ -155,9 +160,11 @@ function UnitsPage() {
         title="Units"
         description="View apartments and units across all buildings."
         actions={
-          <button type="button" className="btn btn-primary" onClick={() => setEditingUnit({})}>
-            New Unit
-          </button>
+          canManage ? (
+            <button type="button" className="btn btn-primary" onClick={() => setEditingUnit({})}>
+              New Unit
+            </button>
+          ) : undefined
         }
       />
 

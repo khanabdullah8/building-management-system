@@ -3,6 +3,7 @@ import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import ExpensesPage from './ExpensesPage'
+import { AuthContext } from '../../context/auth-context'
 import http from '../../api/http'
 
 vi.mock('../../api/http', () => ({
@@ -34,8 +35,21 @@ const expenses = [
   },
 ]
 
-function renderPage() {
-  return render(<MemoryRouter><ExpensesPage /></MemoryRouter>)
+function renderPage(role = 'admin') {
+  const authValue = {
+    user: { id: 'u1', name: 'Test', email: 'test@test.local', role },
+    loading: false,
+    isAuthenticated: Boolean(role),
+    login: vi.fn(),
+    logout: vi.fn(),
+  }
+  return render(
+    <MemoryRouter>
+      <AuthContext.Provider value={authValue}>
+        <ExpensesPage />
+      </AuthContext.Provider>
+    </MemoryRouter>,
+  )
 }
 
 function mockList(data = expenses) {
@@ -381,5 +395,49 @@ describe('ExpensesPage CRUD functionality', () => {
 
     expect(await screen.findByText('Expense not found')).toBeInTheDocument()
     expect(screen.getByRole('dialog', { name: 'Delete Expense' })).toBeInTheDocument()
+  })
+})
+
+describe('ExpensesPage RBAC (Phase 23)', () => {
+  beforeEach(() => {
+    vi.resetAllMocks()
+    mockList()
+  })
+
+  it('admin sees management actions', async () => {
+    renderPage('admin')
+
+    await screen.findByText('Electricity bill')
+    expect(screen.getByRole('button', { name: 'Add Expense' })).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: 'Edit' })).toHaveLength(3)
+    expect(screen.getAllByRole('button', { name: 'Delete' })).toHaveLength(3)
+  })
+
+  it('staff sees management actions (authorized)', async () => {
+    renderPage('staff')
+
+    await screen.findByText('Electricity bill')
+    expect(screen.getByRole('button', { name: 'Add Expense' })).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: 'Edit' })).toHaveLength(3)
+    expect(screen.getAllByRole('button', { name: 'Delete' })).toHaveLength(3)
+  })
+
+  it('resident does not see management actions', async () => {
+    renderPage('resident')
+
+    await screen.findByText('Electricity bill')
+    expect(screen.queryByRole('button', { name: 'Add Expense' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument()
+    expect(screen.getByText('Electricity bill')).toBeInTheDocument()
+  })
+
+  it('resident can still read/filter expenses', async () => {
+    const user = userEvent.setup()
+    renderPage('resident')
+
+    await screen.findByText('Electricity bill')
+    await user.selectOptions(screen.getByLabelText('Filter by category'), 'utilities')
+    await waitFor(() => expect(http.get).toHaveBeenCalledWith('/v1/expenses?page=1&limit=20&category=utilities'))
   })
 })

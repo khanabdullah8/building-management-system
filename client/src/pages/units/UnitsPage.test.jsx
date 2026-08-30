@@ -3,6 +3,7 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import UnitsPage from './UnitsPage'
+import { AuthContext } from '../../context/auth-context'
 import http from '../../api/http'
 
 vi.mock('../../api/http', () => ({
@@ -24,8 +25,21 @@ const mockUnits = [
   { id: 'unit-2', unitNumber: 'B-202', building: { id: 'bld-2', name: 'Maple Residency', code: 'BLD-B' }, type: '3BHK', floor: 2, status: 'occupied' },
 ]
 
-function renderPage() {
-  return render(<MemoryRouter><UnitsPage /></MemoryRouter>)
+function renderPage(role = 'admin') {
+  const authValue = {
+    user: { id: 'u1', name: 'Test', email: 'test@test.local', role },
+    loading: false,
+    isAuthenticated: Boolean(role),
+    login: vi.fn(),
+    logout: vi.fn(),
+  }
+  return render(
+    <MemoryRouter>
+      <AuthContext.Provider value={authValue}>
+        <UnitsPage />
+      </AuthContext.Provider>
+    </MemoryRouter>,
+  )
 }
 
 function mockRequests(units = mockUnits) {
@@ -261,5 +275,50 @@ describe('UnitsPage CRUD functionality', () => {
 
     expect(await screen.findByText('Unit not found')).toBeInTheDocument()
     expect(screen.getByRole('dialog', { name: 'Delete Unit' })).toBeInTheDocument()
+  })
+})
+
+describe('UnitsPage RBAC (Phase 23)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockRequests()
+  })
+
+  it('admin sees management actions', async () => {
+    renderPage('admin')
+
+    await screen.findByText('A-101')
+    expect(screen.getByRole('button', { name: 'New Unit' })).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: 'Edit' })).toHaveLength(2)
+    expect(screen.getAllByRole('button', { name: 'Delete' })).toHaveLength(2)
+  })
+
+  it('staff sees management actions (authorized)', async () => {
+    renderPage('staff')
+
+    await screen.findByText('A-101')
+    expect(screen.getByRole('button', { name: 'New Unit' })).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: 'Edit' })).toHaveLength(2)
+    expect(screen.getAllByRole('button', { name: 'Delete' })).toHaveLength(2)
+  })
+
+  it('resident does not see management actions', async () => {
+    renderPage('resident')
+
+    await screen.findByText('A-101')
+    expect(screen.queryByRole('button', { name: 'New Unit' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument()
+  })
+
+  it('resident can still read/search units', async () => {
+    const user = userEvent.setup()
+    renderPage('resident')
+
+    await screen.findByText('A-101')
+    expect(screen.getByText('B-202')).toBeInTheDocument()
+
+    await user.type(screen.getByRole('searchbox'), 'A-101')
+    await waitFor(() => expect(http.get).toHaveBeenCalledWith('/v1/units?page=1&limit=20&search=A-101'))
   })
 })

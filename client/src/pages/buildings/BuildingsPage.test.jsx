@@ -3,6 +3,7 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import BuildingsPage from './BuildingsPage'
+import { AuthContext } from '../../context/auth-context'
 import http from '../../api/http'
 
 vi.mock('../../api/http', () => ({
@@ -19,8 +20,21 @@ const buildings = [
   { id: 'building-2', code: 'BLD-B', name: 'Maple Residency', address: '88 Maple Street', units: 64, status: 'inactive' },
 ]
 
-function renderPage() {
-  return render(<MemoryRouter><BuildingsPage /></MemoryRouter>)
+function renderPage(role = 'admin') {
+  const authValue = {
+    user: { id: 'u1', name: 'Test', email: 'test@test.local', role },
+    loading: false,
+    isAuthenticated: Boolean(role),
+    login: vi.fn(),
+    logout: vi.fn(),
+  }
+  return render(
+    <MemoryRouter>
+      <AuthContext.Provider value={authValue}>
+        <BuildingsPage />
+      </AuthContext.Provider>
+    </MemoryRouter>,
+  )
 }
 
 function mockList(data = buildings) {
@@ -299,5 +313,52 @@ describe('BuildingsPage pagination', () => {
 
     await screen.findByText('Greenwood Heights')
     expect(screen.queryByRole('navigation', { name: 'Pagination' })).not.toBeInTheDocument()
+  })
+})
+
+describe('BuildingsPage RBAC (Phase 23)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockList()
+  })
+
+  it('admin sees management actions', async () => {
+    renderPage('admin')
+
+    await screen.findByText('Greenwood Heights')
+    expect(screen.getByRole('button', { name: 'New Building' })).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: 'Edit' })).toHaveLength(2)
+    expect(screen.getAllByRole('button', { name: 'Delete' })).toHaveLength(2)
+  })
+
+  it('staff sees management actions (authorized)', async () => {
+    renderPage('staff')
+
+    await screen.findByText('Greenwood Heights')
+    expect(screen.getByRole('button', { name: 'New Building' })).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: 'Edit' })).toHaveLength(2)
+    expect(screen.getAllByRole('button', { name: 'Delete' })).toHaveLength(2)
+  })
+
+  it('resident does not see management actions', async () => {
+    renderPage('resident')
+
+    await screen.findByText('Greenwood Heights')
+    expect(screen.queryByRole('button', { name: 'New Building' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument()
+  })
+
+  it('resident can still read/search buildings', async () => {
+    const user = userEvent.setup()
+    renderPage('resident')
+
+    await screen.findByText('Greenwood Heights')
+    expect(screen.getByText('Maple Residency')).toBeInTheDocument()
+
+    await user.type(screen.getByRole('searchbox'), 'Greenwood')
+    await waitFor(() => {
+      expect(http.get).toHaveBeenCalledWith('/v1/buildings?page=1&limit=20&search=Greenwood')
+    })
   })
 })
