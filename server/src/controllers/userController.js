@@ -336,6 +336,13 @@ const updateUser = asyncHandler(async (req, res) => {
   if (validatedBuildings !== undefined) user.buildings = validatedBuildings;
   if (validatedResident !== undefined) user.resident = validatedResident;
 
+  // A role or status change is a privilege change: invalidate all existing
+  // JWT sessions for this user so they must re-authenticate. Unrelated
+  // profile edits (name/email/buildings/resident) must not invalidate sessions.
+  if (role !== undefined || status !== undefined) {
+    user.tokenVersion = (user.tokenVersion || 0) + 1;
+  }
+
   await user.save();
 
   try {

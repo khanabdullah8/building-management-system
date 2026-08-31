@@ -385,6 +385,7 @@ describe('Admin User Management + Staff Building Assignment (Phase 17)', () => {
 
     beforeEach(async () => {
       const fresh = await User.findById(staffA._id);
+      staffA = fresh;
       buildingsBefore = fresh.buildings.map((b) => b.toString());
     });
 

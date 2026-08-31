@@ -31,6 +31,7 @@ function getAuthToken(user) {
     id: u._id.toString(),
     email: u.email,
     role: u.role,
+    tokenVersion: u.tokenVersion,
   };
   return jwt.sign(payload, TEST_JWT_SECRET, { expiresIn: '1h' });
 }

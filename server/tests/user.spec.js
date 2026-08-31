@@ -244,9 +244,12 @@ describe('User API (/api/v1/users)', () => {
         status: 'active',
       });
 
+      const currentStaff = await User.findById(staffUser._id);
+      const freshStaffToken = `Bearer ${getAuthToken(currentStaff)}`;
+
       const res = await request(app)
         .delete(`/api/v1/users/${temp._id}`)
-        .set('Authorization', staffToken);
+        .set('Authorization', freshStaffToken);
 
       expect(res.status).toBe(403);
 
