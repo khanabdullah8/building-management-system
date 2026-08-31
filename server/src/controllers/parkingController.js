@@ -32,6 +32,25 @@ const validateBuilding = async (buildingId) => {
   return building;
 };
 
+const maskVehicleNumber = (value) => {
+  if (!value) return value;
+  const alnum = String(value).replace(/[^A-Za-z0-9]/g, '');
+  if (alnum.length <= 6) return `${alnum.slice(0, 2)}••`;
+  return `${alnum.slice(0, 4)}••${alnum.slice(-4)}`;
+};
+
+const hideOtherUnitVehicleNumbers = (slot, scope) => {
+  const slotUnitId = slot.unit ? (slot.unit._id || slot.unit).toString() : null;
+  const residentUnitId = scope.unitId ? scope.unitId.toString() : null;
+  const isOwnUnit = residentUnitId && slotUnitId === residentUnitId;
+  if (isOwnUnit || !slot.vehicleNumber) {
+    return slot;
+  }
+  const plain = slot.toObject();
+  plain.vehicleNumber = maskVehicleNumber(slot.vehicleNumber);
+  return plain;
+};
+
 const validateUnitBelongsToBuilding = async (unitId, buildingId) => {
   if (!mongoose.Types.ObjectId.isValid(unitId)) {
     throw new ApiError(400, 'Invalid unit ID format', { unit: 'Invalid unit ID format' });
@@ -93,12 +112,16 @@ const getParkingSlots = asyncHandler(async (req, res) => {
   }
 
   const total = await Parking.countDocuments(filter);
-  const slots = await Parking.find(filter)
+  let slots = await Parking.find(filter)
     .populate(buildingPopulation)
     .populate(parkingPopulation)
     .sort({ createdAt: -1 })
     .limit(limit)
     .skip(skip);
+
+  if (req.user.role === 'resident') {
+    slots = slots.map((slot) => hideOtherUnitVehicleNumbers(slot, req.scope));
+  }
 
   return sendSuccess(res, slots, null, paginationMeta(page, limit, total));
 });
@@ -122,7 +145,11 @@ const getParkingSlotById = asyncHandler(async (req, res) => {
     throw new ApiError(403, 'Forbidden: insufficient permissions');
   }
 
-  return sendSuccess(res, slot);
+  const payload = req.user.role === 'resident'
+    ? hideOtherUnitVehicleNumbers(slot, req.scope)
+    : slot;
+
+  return sendSuccess(res, payload);
 });
 
 const createParkingSlot = asyncHandler(async (req, res) => {

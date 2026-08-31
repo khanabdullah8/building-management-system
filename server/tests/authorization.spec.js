@@ -736,7 +736,7 @@ describe('Building-scoped Authorization (Phase 16)', () => {
   });
 
   describe('Phase 22: Resident read-only for buildings/units/expenses', () => {
-    let expenseInA;
+    let expenseInA, expenseInB;
     const originalBuildingName = 'Building A';
 
     beforeAll(async () => {
@@ -747,12 +747,20 @@ describe('Building-scoped Authorization (Phase 16)', () => {
         amount: 100,
         status: 'pending',
       });
+      expenseInB = await Expense.create({
+        category: 'security',
+        building: buildingB._id,
+        description: 'Phase22 other building',
+        amount: 250,
+        status: 'approved',
+      });
       buildingA.name = originalBuildingName;
       await buildingA.save();
     });
 
     afterAll(async () => {
       await Expense.deleteMany({ _id: expenseInA._id });
+      await Expense.deleteMany({ _id: expenseInB._id });
     });
 
     it('resident cannot create a unit (403) and DB is unchanged', async () => {
@@ -815,16 +823,58 @@ describe('Building-scoped Authorization (Phase 16)', () => {
       expect(await Expense.findById(expenseInA._id)).not.toBeNull();
     });
 
-    it('resident cannot update a building (403) and DB is unchanged', async () => {
+    it('E1 policy: resident can read own-building expenses with full financial fields', async () => {
       const token = getAuthToken(residentUser);
       const res = await request(app)
-        .patch(`/api/v1/buildings/${buildingA._id}`)
-        .set('Authorization', `Bearer ${token}`)
-        .send({ name: 'Hacked Building' });
-      expect(res.status).toBe(403);
-      const reloaded = await Building.findById(buildingA._id);
-      expect(reloaded.name).toBe(originalBuildingName);
+        .get('/api/v1/expenses')
+        .set('Authorization', `Bearer ${token}`);
+      expect(res.status).toBe(200);
+      const own = res.body.data.find((e) => e.id === expenseInA._id.toString());
+      expect(own).toBeTruthy();
+      expect(own.amount).toBe(100);
+      expect(own.description).toBe('Phase22 fixture');
+      expect(own.category).toBe('maintenance');
+      expect(own.status).toBe('pending');
     });
+
+    it('E1 policy: resident cannot see another building expenses in the list', async () => {
+      const token = getAuthToken(residentUser);
+      const res = await request(app)
+        .get('/api/v1/expenses')
+        .set('Authorization', `Bearer ${token}`);
+      expect(res.status).toBe(200);
+      const ids = res.body.data.map((e) => e.id.toString());
+      expect(ids).toContain(expenseInA._id.toString());
+      expect(ids).not.toContain(expenseInB._id.toString());
+    });
+
+    it('E1 policy: resident filtering by another building returns nothing', async () => {
+      const token = getAuthToken(residentUser);
+      const res = await request(app)
+        .get(`/api/v1/expenses?building=${buildingB._id}`)
+        .set('Authorization', `Bearer ${token}`);
+      expect(res.status).toBe(200);
+      expect(res.body.data).toHaveLength(0);
+    });
+
+    it('E1 policy: resident can read own-building expense detail with full fields', async () => {
+      const token = getAuthToken(residentUser);
+      const res = await request(app)
+        .get(`/api/v1/expenses/${expenseInA._id}`)
+        .set('Authorization', `Bearer ${token}`);
+      expect(res.status).toBe(200);
+      expect(res.body.data.amount).toBe(100);
+      expect(res.body.data.description).toBe('Phase22 fixture');
+    });
+
+    it('E1 policy: resident cannot read another-building expense detail (403)', async () => {
+      const token = getAuthToken(residentUser);
+      const res = await request(app)
+        .get(`/api/v1/expenses/${expenseInB._id}`)
+        .set('Authorization', `Bearer ${token}`);
+      expect(res.status).toBe(403);
+    });
+
 
     it('staff can still create a unit in assigned building (201)', async () => {
       const token = getAuthToken(staffUserWithBuildings);

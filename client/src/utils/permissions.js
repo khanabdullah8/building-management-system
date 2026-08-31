@@ -12,6 +12,10 @@ export function canManageExpenses(role) {
   return MANAGER_ROLES.includes(role)
 }
 
+export function canManageParking(role) {
+  return MANAGER_ROLES.includes(role)
+}
+
 export function canCreateServiceRequest(role) {
   return ['admin', 'staff', 'resident'].includes(role)
 }

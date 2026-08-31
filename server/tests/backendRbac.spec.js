@@ -29,7 +29,7 @@ const { getAuthToken } = require('./helpers/auth');
 describe('Phase 25: Backend RBAC Hardening', () => {
   let adminUser, staffUser, residentUser;
   let buildingA, buildingB;
-  let unitA1, unitB1;
+  let unitA1, unitA2, unitB1;
   let residentOwn, residentOther;
 
   const buildAuth = (user) => {
@@ -69,6 +69,7 @@ describe('Phase 25: Backend RBAC Hardening', () => {
     buildingB = await Building.create({ code: 'RBACB', name: 'Rbac Building B', address: 'B st', units: 2 });
 
     unitA1 = await Unit.create({ unitNumber: 'RBA-101', building: buildingA._id, type: '2BHK', floor: 1, status: 'occupied' });
+    unitA2 = await Unit.create({ unitNumber: 'RBA-102', building: buildingA._id, type: '2BHK', floor: 2, status: 'occupied' });
     unitB1 = await Unit.create({ unitNumber: 'RBB-101', building: buildingB._id, type: '2BHK', floor: 1, status: 'occupied' });
 
     residentOwn = await Resident.create({ name: 'Own Resident', unit: unitA1._id, phone: '111', type: 'owner', status: 'active' });
@@ -95,7 +96,7 @@ describe('Phase 25: Backend RBAC Hardening', () => {
     await Complaint.deleteMany({});
     await Maintenance.deleteMany({});
     await Resident.deleteMany({ _id: { $in: [residentOwn._id, residentOther._id] } });
-    await Unit.deleteMany({ _id: { $in: [unitA1._id, unitB1._id] } });
+    await Unit.deleteMany({ _id: { $in: [unitA1._id, unitA2._id, unitB1._id] } });
     await Building.deleteMany({ _id: { $in: [buildingA._id, buildingB._id] } });
     await User.deleteMany({});
     await stopMemoryDb();
@@ -158,6 +159,87 @@ describe('Phase 25: Backend RBAC Hardening', () => {
     it('resident can still read parking slots', async () => {
       const res = await auth(residentUser).get('/api/v1/parking');
       expect(res.status).toBe(200);
+    });
+  });
+
+  describe('PARKING privacy: resident vehicleNumber masking', () => {
+    let ownSlot, otherUnitSlot, otherBuildingSlot;
+    beforeAll(async () => {
+      ownSlot = await Parking.create({
+        slotCode: 'PRIV-OWN', building: buildingA._id, unit: unitA1._id,
+        vehicleType: 'car', vehicleNumber: 'AB123',
+      });
+      otherUnitSlot = await Parking.create({
+        slotCode: 'PRIV-OTHER', building: buildingA._id, unit: unitA2._id,
+        vehicleType: 'car', vehicleNumber: 'CD456',
+      });
+      otherBuildingSlot = await Parking.create({
+        slotCode: 'PRIV-B', building: buildingB._id, unit: unitB1._id,
+        vehicleType: 'bike', vehicleNumber: 'EF789',
+      });
+    });
+    afterAll(async () => {
+      await Parking.deleteMany({ _id: { $in: [ownSlot._id, otherUnitSlot._id, otherBuildingSlot._id] } });
+    });
+
+    it('resident can read own-building parking, including other units (building scoped)', async () => {
+      const res = await auth(residentUser).get('/api/v1/parking');
+      expect(res.status).toBe(200);
+      const codes = res.body.data.map((s) => s.slotCode);
+      expect(codes).toContain('PRIV-OWN');
+      expect(codes).toContain('PRIV-OTHER');
+      expect(codes).not.toContain('PRIV-B');
+    });
+
+    it('resident receives own-unit vehicleNumber in full but other-unit vehicleNumber is masked', async () => {
+      const res = await auth(residentUser).get('/api/v1/parking');
+      expect(res.status).toBe(200);
+      const own = res.body.data.find((s) => s.slotCode === 'PRIV-OWN');
+      const other = res.body.data.find((s) => s.slotCode === 'PRIV-OTHER');
+      expect(own.vehicleNumber).toBe('AB123');
+      expect(other.vehicleNumber).not.toBe('CD456');
+      expect(other.vehicleNumber).toMatch(/CD/);
+    });
+
+    it('resident cannot retrieve another-building parking detail (403)', async () => {
+      const res = await auth(residentUser).get(`/api/v1/parking/${otherBuildingSlot._id}`);
+      expect(res.status).toBe(403);
+    });
+
+    it('resident can retrieve own-building other-unit detail but only with a masked vehicleNumber', async () => {
+      const res = await auth(residentUser).get(`/api/v1/parking/${otherUnitSlot._id}`);
+      expect(res.status).toBe(200);
+      expect(res.body.data.vehicleNumber).not.toBe('CD456');
+      expect(res.body.data.vehicleNumber).toMatch(/CD/);
+    });
+
+    it('resident ?unit=<other unit in same building> remains building-scoped and masked, no cross-building read', async () => {
+      const res = await auth(residentUser).get(`/api/v1/parking?unit=${unitA2._id}`);
+      expect(res.status).toBe(200);
+      const codes = res.body.data.map((s) => s.slotCode);
+      expect(codes).toContain('PRIV-OTHER');
+      expect(codes).not.toContain('PRIV-B');
+      expect(res.body.data[0].vehicleNumber).not.toBe('CD456');
+    });
+
+    it('resident attempting ?unit in another building receives no data (building scoped)', async () => {
+      const res = await auth(residentUser).get(`/api/v1/parking?unit=${unitB1._id}`);
+      expect(res.status).toBe(200);
+      const codes = res.body.data.map((s) => s.slotCode);
+      expect(codes).not.toContain('PRIV-B');
+      expect(codes).not.toContain('PRIV-OTHER');
+    });
+
+    it('admin receives full vehicleNumber for another unit slot', async () => {
+      const res = await auth(adminUser).get(`/api/v1/parking/${otherUnitSlot._id}`);
+      expect(res.status).toBe(200);
+      expect(res.body.data.vehicleNumber).toBe('CD456');
+    });
+
+    it('staff receives full vehicleNumber for another unit slot', async () => {
+      const res = await auth(staffUser).get(`/api/v1/parking/${otherUnitSlot._id}`);
+      expect(res.status).toBe(200);
+      expect(res.body.data.vehicleNumber).toBe('CD456');
     });
   });
 

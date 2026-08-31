@@ -10,12 +10,23 @@ import Modal from '../../components/ui/Modal'
 import Pagination from '../../components/ui/Pagination'
 import http from '../../api/http'
 import { buildListParams } from '../../utils/queryParams'
+import { useAuth } from '../../hooks/useAuth'
+import { canManageParking } from '../../utils/permissions'
 import ParkingModal from './ParkingModal'
 import './ParkingPage.css'
 
 const PAGE_SIZE = 20
 
+function maskVehicleNumber(value) {
+  if (!value) return value
+  const alnum = String(value).replace(/[^A-Za-z0-9]/g, '')
+  if (alnum.length <= 6) return `${alnum.slice(0, 2)}••`
+  return `${alnum.slice(0, 4)}••${alnum.slice(-4)}`
+}
+
 function ParkingPage() {
+  const { user } = useAuth()
+  const canManage = canManageParking(user?.role)
   const [slots, setSlots] = useState([])
   const [query, setQuery] = useState('')
   const [page, setPage] = useState(1)
@@ -150,7 +161,7 @@ function ParkingPage() {
       },
     },
     { key: 'vehicleType', header: 'Vehicle Type', render: (value) => value ? value.charAt(0).toUpperCase() + value.slice(1) : '—' },
-    { key: 'vehicleNumber', header: 'Vehicle No.', render: (value) => value || '—' },
+    { key: 'vehicleNumber', header: 'Vehicle No.', render: (value) => (value ? (canManage ? value : maskVehicleNumber(value)) : '—') },
     {
       key: 'status',
       header: 'Status',
@@ -162,16 +173,19 @@ function ParkingPage() {
     {
       key: 'actions',
       header: 'Actions',
-      render: (_, slot) => (
-        <div className="parking-row-actions">
-          <button type="button" className="btn btn-secondary" onClick={() => setEditingSlot(slot)}>
-            Edit
-          </button>
-          <button type="button" className="btn btn-danger" onClick={() => setSlotToDelete(slot)}>
-            Delete
-          </button>
-        </div>
-      ),
+      render: (_, slot) => {
+        if (!canManage) return '—'
+        return (
+          <div className="parking-row-actions">
+            <button type="button" className="btn btn-secondary" onClick={() => setEditingSlot(slot)}>
+              Edit
+            </button>
+            <button type="button" className="btn btn-danger" onClick={() => setSlotToDelete(slot)}>
+              Delete
+            </button>
+          </div>
+        )
+      },
     },
   ]
 
@@ -199,9 +213,11 @@ function ParkingPage() {
         title="Parking"
         description="Manage parking slots and their unit allocations."
         actions={
-          <button type="button" className="btn btn-primary" onClick={() => setEditingSlot({})}>
-            Add Slot
-          </button>
+          canManage ? (
+            <button type="button" className="btn btn-primary" onClick={() => setEditingSlot({})}>
+              Add Slot
+            </button>
+          ) : null
         }
       />
 

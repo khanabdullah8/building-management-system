@@ -3,6 +3,7 @@ import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import ParkingPage from './ParkingPage'
+import { AuthContext } from '../../context/auth-context'
 import http from '../../api/http'
 
 vi.mock('../../api/http', () => ({
@@ -39,8 +40,21 @@ const parkingSlots = [
   },
 ]
 
-function renderPage() {
-  return render(<MemoryRouter><ParkingPage /></MemoryRouter>)
+function renderPage(role = 'admin') {
+  const authValue = {
+    user: { id: 'u1', name: 'Test', email: 'test@test.local', role },
+    loading: false,
+    isAuthenticated: Boolean(role),
+    login: vi.fn(),
+    logout: vi.fn(),
+  }
+  return render(
+    <MemoryRouter>
+      <AuthContext.Provider value={authValue}>
+        <ParkingPage />
+      </AuthContext.Provider>
+    </MemoryRouter>,
+  )
 }
 
 function mockList(data = parkingSlots) {
@@ -345,5 +359,51 @@ describe('ParkingPage CRUD functionality', () => {
 
     expect(await screen.findByText('Parking slot not found')).toBeInTheDocument()
     expect(screen.getByRole('dialog', { name: 'Delete Parking Slot' })).toBeInTheDocument()
+  })
+})
+
+describe('ParkingPage RBAC', () => {
+  beforeEach(() => {
+    vi.resetAllMocks()
+    mockList()
+  })
+
+  it('admin sees management controls and full vehicle numbers', async () => {
+    renderPage('admin')
+
+    await screen.findByText('P-01')
+    expect(screen.getByRole('button', { name: 'Add Slot' })).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: 'Edit' })).toHaveLength(3)
+    expect(screen.getAllByRole('button', { name: 'Delete' })).toHaveLength(3)
+    expect(screen.getByText('MH-12-AB-1234')).toBeInTheDocument()
+  })
+
+  it('staff sees management controls and full vehicle numbers', async () => {
+    renderPage('staff')
+
+    await screen.findByText('P-01')
+    expect(screen.getByRole('button', { name: 'Add Slot' })).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: 'Edit' })).toHaveLength(3)
+    expect(screen.getAllByRole('button', { name: 'Delete' })).toHaveLength(3)
+    expect(screen.getByText('MH-12-AB-1234')).toBeInTheDocument()
+  })
+
+  it('resident does not see management controls and does not see full vehicle numbers', async () => {
+    renderPage('resident')
+
+    await screen.findByText('P-01')
+    expect(screen.queryByRole('button', { name: 'Add Slot' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument()
+    expect(screen.queryByText('MH-12-AB-1234')).not.toBeInTheDocument()
+    expect(screen.getByText('MH12••1234')).toBeInTheDocument()
+  })
+
+  it('resident can still read building parking information', async () => {
+    renderPage('resident')
+
+    expect(await screen.findByText('P-01')).toBeInTheDocument()
+    expect(screen.getByText('P-02')).toBeInTheDocument()
+    expect(screen.getByText('M-05')).toBeInTheDocument()
   })
 })
