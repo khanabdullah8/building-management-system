@@ -36,6 +36,10 @@ const userSchema = new mongoose.Schema(
       },
       default: 'active',
     },
+    tokenVersion: {
+      type: Number,
+      default: 0,
+    },
     resident: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Resident',

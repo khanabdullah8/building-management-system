@@ -32,6 +32,11 @@ const protect = asyncHandler(async (req, res, next) => {
     throw new ApiError(401, 'Not authorized, user inactive');
   }
 
+  const tokenVersion = decoded.tokenVersion ?? 0;
+  if (tokenVersion !== user.tokenVersion) {
+    throw new ApiError(401, 'Not authorized, token has been revoked');
+  }
+
   req.user = { id: user._id.toString(), name: user.name, email: user.email, role: user.role };
   next();
 });

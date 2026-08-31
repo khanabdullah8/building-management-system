@@ -27,7 +27,12 @@ const login = asyncHandler(async (req, res) => {
   }
 
   const token = jwt.sign(
-    { id: user._id.toString(), email: user.email, role: user.role },
+    {
+      id: user._id.toString(),
+      email: user.email,
+      role: user.role,
+      tokenVersion: user.tokenVersion,
+    },
     JWT_SECRET,
     { expiresIn: '24h' }
   );
@@ -46,6 +51,8 @@ const getMe = asyncHandler(async (req, res) => {
 });
 
 const logout = asyncHandler(async (req, res) => {
+  await User.findByIdAndUpdate(req.user.id, { $inc: { tokenVersion: 1 } });
+
   sendSuccess(res, null, 'Logged out successfully', null, 200);
 });
 
