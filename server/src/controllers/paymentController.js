@@ -117,7 +117,17 @@ const getPayments = asyncHandler(async (req, res) => {
       }
       filter.bill = { $in: [requestedBillId] };
     } else if (filter.bill && filter.bill.$in) {
-      filter.bill = { $in: [...filter.bill.$in, requestedBillId] };
+      // Staff: filter.bill is scoped to the staff member's assigned buildings
+      // (resolved via unitScopeFilter). Intersect the requested bill with that
+      // scoped set rather than unioning an arbitrary ID — otherwise a staff
+      // member could read payments for a bill outside their buildings.
+      const inScope = filter.bill.$in.some(
+        (id) => id.toString() === requestedBillId.toString()
+      );
+      if (!inScope) {
+        return emptyResult();
+      }
+      filter.bill = { $in: [requestedBillId] };
     } else {
       filter.bill = requestedBillId;
     }

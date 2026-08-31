@@ -830,4 +830,66 @@ describe('Payment API (/api/v1/payments)', () => {
       expect(res.body.data).toEqual([]);
     });
   });
+
+  describe('Staff scoped GET /api/v1/payments?bill= (Phase 35 H-1)', () => {
+    let staffUser;
+    let unitA, unitB;
+    let billA, billB;
+
+    beforeEach(async () => {
+      await Payment.deleteMany({});
+      await Bill.deleteMany({});
+      await Unit.deleteMany({});
+      await Building.deleteMany({});
+      await Resident.deleteMany({});
+      await User.deleteMany({}); // includes the staff user below
+
+      const buildingA = await Building.create({ code: 'STAFF-PAY-A', name: 'Staff Building A' });
+      const buildingB = await Building.create({ code: 'STAFF-PAY-B', name: 'Staff Building B' });
+
+      unitA = await Unit.create({ unitNumber: 'SA-101', building: buildingA._id });
+      unitB = await Unit.create({ unitNumber: 'SB-101', building: buildingB._id });
+
+      // Staff is assigned ONLY to building A.
+      staffUser = await User.create({
+        name: 'Staff A',
+        email: 'staff-a-pay@test.local',
+        password: 'password123',
+        role: 'staff',
+        status: 'active',
+        buildings: [buildingA._id],
+      });
+
+      billA = await Bill.create({ unit: unitA._id, period: 'Jan 2026', amount: 1000, status: 'pending' });
+      billB = await Bill.create({ unit: unitB._id, period: 'Jan 2026', amount: 9000, status: 'pending' });
+
+      await Payment.create({ bill: billA._id, amount: 1000, method: 'upi', status: 'completed' });
+      await Payment.create({ bill: billB._id, amount: 9000, method: 'cash', status: 'completed' });
+    });
+
+    afterEach(async () => {
+      await Payment.deleteMany({});
+      await Bill.deleteMany({});
+      await Unit.deleteMany({});
+      await Building.deleteMany({});
+      await User.deleteMany({});
+    });
+
+    it('does not expose Building B payments when staff filters by an out-of-scope bill', async () => {
+      const token = `Bearer ${getAuthToken(staffUser)}`;
+      const res = await authRequest(app, token).get(`/api/v1/payments?bill=${billB._id}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.data).toEqual([]);
+    });
+
+    it('staff can still retrieve payments for a bill in their assigned building', async () => {
+      const token = `Bearer ${getAuthToken(staffUser)}`;
+      const res = await authRequest(app, token).get(`/api/v1/payments?bill=${billA._id}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.length).toBe(1);
+      expect(res.body.data[0].bill.id).toBe(billA._id.toString());
+    });
+  });
 });
