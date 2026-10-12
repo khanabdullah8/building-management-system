@@ -6,6 +6,7 @@ const morgan = require('morgan');
 
 const { NODE_ENV, ALLOWED_ORIGINS } = require('./config/env');
 const { createRateLimiter } = require('./middlewares/rateLimit');
+const requestLogFormat = require('./middlewares/requestLogger');
 const { protect } = require('./middlewares/auth');
 const { loadBuildingScope } = require('./middlewares/buildingScope');
 const notFoundHandler = require('./middlewares/notFound');
@@ -42,7 +43,7 @@ app.use(
   })
 );
 app.use(express.json({ limit: '1mb' }));
-app.use(morgan('dev', { skip: () => NODE_ENV === 'test' }));
+app.use(morgan(requestLogFormat, { skip: () => NODE_ENV === 'test' }));
 app.use(createRateLimiter());
 
 app.get('/api/health', (req, res) => {

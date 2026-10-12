@@ -5,10 +5,12 @@ process.env.RATE_LIMIT_MAX = '1000';
 
 const express = require('express');
 const request = require('supertest');
+const morgan = require('morgan');
 
 const app = require('../src/app');
 const ApiError = require('../src/utils/ApiError');
 const errorHandler = require('../src/middlewares/error');
+const requestLogFormat = require('../src/middlewares/requestLogger');
 const { createRateLimiter } = require('../src/middlewares/rateLimit');
 const { connectDB, disconnectDB } = require('../src/config/db');
 const { startMemoryDb, stopMemoryDb } = require('./helpers/db');
@@ -461,5 +463,126 @@ describe('Phase 1 server', () => {
         process.env.NODE_ENV = originalNodeEnv;
       }
     });
+  });
+});
+
+describe('request logging (Morgan)', () => {
+  function captureMorganStream() {
+    const lines = [];
+    const stream = {
+      write(line) {
+        lines.push(String(line));
+        return true;
+      },
+    };
+    return { lines, stream };
+  }
+
+  function makeLogApp(stream) {
+    const logApp = express();
+    logApp.use(morgan(requestLogFormat, { stream }));
+    return logApp;
+  }
+
+  it('excludes a synthetic email query value from the request log', async () => {
+    const { lines, stream } = captureMorganStream();
+    const logApp = makeLogApp(stream);
+
+    logApp.get('/api/payments', (req, res) => res.json({ data: [{ email: req.query.email }] }));
+
+    await request(logApp).get('/api/payments?email=SYNTHETIC_EMAIL_MARKER');
+
+    const logged = lines.join('');
+    expect(logged).not.toContain('SYNTHETIC_EMAIL_MARKER');
+    expect(logged).toContain('/api/payments');
+  });
+
+  it('excludes a synthetic token query value from the request log', async () => {
+    const { lines, stream } = captureMorganStream();
+    const logApp = makeLogApp(stream);
+
+    logApp.get('/api/auth/example', (req, res) => res.json({ ok: true }));
+
+    await request(logApp).get('/api/auth/example?token=SYNTHETIC_TOKEN');
+
+    const logged = lines.join('');
+    expect(logged).not.toContain('SYNTHETIC_TOKEN');
+    expect(logged).toContain('/api/auth/example');
+  });
+
+  it('excludes a synthetic search query value from the request log', async () => {
+    const { lines, stream } = captureMorganStream();
+    const logApp = makeLogApp(stream);
+
+    logApp.get('/api/residents', (req, res) => res.json({ data: [] }));
+
+    await request(logApp).get('/api/residents?search=SYNTHETIC_SEARCH_MARKER');
+
+    const logged = lines.join('');
+    expect(logged).not.toContain('SYNTHETIC_SEARCH_MARKER');
+    expect(logged).toContain('/api/residents');
+  });
+
+  it('retains pathname, method, status, response time, and content length', async () => {
+    const { lines, stream } = captureMorganStream();
+    const logApp = makeLogApp(stream);
+
+    logApp.get('/api/buildings', (req, res) => res.json({ data: [] }));
+
+    await request(logApp).get('/api/buildings');
+
+    const logged = lines.join('');
+    expect(logged).toContain('/api/buildings');
+    expect(logged).toMatch(/\bGET\b/);
+    expect(logged).toMatch(/\b200\b/);
+    expect(logged).toMatch(/\d+\.\d+ ms/);
+
+    const contentLength = logged.trim().split(' - ')[1];
+    expect(Number(contentLength)).toBeGreaterThan(0);
+  });
+
+  it('does not interfere with a normal response or a masked 500 response', async () => {
+    const { lines, stream } = captureMorganStream();
+    const logApp = makeLogApp(stream);
+
+    logApp.get('/ok', (req, res) => res.json({ ok: true }));
+    logApp.get('/boom', (req, res, next) => next(new Error('INTERNAL_DETAIL_MARKER')));
+    logApp.use(errorHandler);
+
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    try {
+      const okRes = await request(logApp).get('/ok');
+      expect(okRes.status).toBe(200);
+
+      const errRes = await request(logApp).get('/boom?secret=SYNTHETIC_QUERY_MARKER');
+      expect(errRes.status).toBe(500);
+      expect(errRes.body.message).toBe('Internal server error');
+      expect(JSON.stringify(errRes.body)).not.toContain('INTERNAL_DETAIL_MARKER');
+
+      const logged = lines.join('');
+      expect(logged).toContain('/ok');
+      expect(logged).toContain('/boom');
+      expect(logged).not.toContain('SYNTHETIC_QUERY_MARKER');
+      expect(logged).not.toContain('INTERNAL_DETAIL_MARKER');
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it('keeps request logging skipped in the test environment', async () => {
+    const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+
+    try {
+      const res = await request(app).get('/api/health');
+      expect(res.status).toBe(200);
+
+      const writes = writeSpy.mock.calls
+        .map((call) => String(call[0]))
+        .join('');
+      expect(writes).not.toContain('/api/health');
+    } finally {
+      writeSpy.mockRestore();
+    }
   });
 });
