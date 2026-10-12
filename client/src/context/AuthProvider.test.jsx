@@ -147,4 +147,57 @@ describe('AuthProvider', () => {
     expect(screen.getByTestId('userName')).toHaveTextContent('none')
     expect(localStorage.getItem('token')).toBeNull()
   })
+
+  it('successful logout revokes the token on the server', async () => {
+    const user = userEvent.setup()
+    localStorage.setItem('token', 'valid-token')
+    http.get.mockResolvedValueOnce({ data: { success: true, data: { user: testUser } } })
+    http.post.mockResolvedValueOnce({ data: { success: true, data: null } })
+
+    renderWithAuth()
+
+    await waitFor(() => {
+      expect(screen.getByTestId('isAuthenticated')).toHaveTextContent('true')
+    })
+
+    await user.click(screen.getByText('Logout'))
+
+    await waitFor(() => {
+      expect(http.post).toHaveBeenCalledTimes(1)
+    })
+
+    expect(http.post).toHaveBeenCalledWith(
+      '/v1/auth/logout',
+      null,
+      expect.objectContaining({
+        headers: { Authorization: 'Bearer valid-token' },
+      }),
+    )
+    expect(screen.getByTestId('isAuthenticated')).toHaveTextContent('false')
+    expect(screen.getByTestId('userName')).toHaveTextContent('none')
+    expect(localStorage.getItem('token')).toBeNull()
+  })
+
+  it('failed logout still clears local state and never leaves the user authenticated', async () => {
+    const user = userEvent.setup()
+    localStorage.setItem('token', 'valid-token')
+    http.get.mockResolvedValueOnce({ data: { success: true, data: { user: testUser } } })
+    http.post.mockRejectedValueOnce(new Error('network down'))
+
+    renderWithAuth()
+
+    await waitFor(() => {
+      expect(screen.getByTestId('isAuthenticated')).toHaveTextContent('true')
+    })
+
+    await user.click(screen.getByText('Logout'))
+
+    await waitFor(() => {
+      expect(http.post).toHaveBeenCalledTimes(1)
+    })
+
+    expect(screen.getByTestId('isAuthenticated')).toHaveTextContent('false')
+    expect(screen.getByTestId('userName')).toHaveTextContent('none')
+    expect(localStorage.getItem('token')).toBeNull()
+  })
 })

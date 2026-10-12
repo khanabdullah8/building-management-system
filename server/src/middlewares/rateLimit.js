@@ -1,5 +1,10 @@
 const rateLimit = require('express-rate-limit');
 
+// NOTE: express-rate-limit uses its default in-memory store. This is correct
+// for a single-instance deployment, but counters are per-process and reset on
+// restart. Before scaling the backend to multiple instances (or behind a load
+// balancer), configure a shared store (e.g. Redis) so limits apply globally.
+
 function createRateLimiter(overrides = {}) {
   const windowMs = Number(overrides.windowMs) || Number(process.env.RATE_LIMIT_WINDOW_MS) || 60 * 1000;
   const max = Number(overrides.max) || Number(process.env.RATE_LIMIT_MAX) || 100;

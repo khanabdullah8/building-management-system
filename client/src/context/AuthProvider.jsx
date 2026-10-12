@@ -37,9 +37,27 @@ export function AuthProvider({ children }) {
     return loggedIn
   }, [])
 
-  const logout = useCallback(() => {
+  const logout = useCallback(async () => {
+    const token = localStorage.getItem('token')
+
+    // Clear local credentials first so a slow or failed request can never
+    // leave the user in an authenticated state.
     localStorage.removeItem('token')
     setUser(null)
+
+    if (!token) return
+
+    try {
+      // Pass the token explicitly: localStorage is already cleared, so the
+      // request interceptor would not attach the Authorization header. The
+      // token is never logged.
+      await http.post('/v1/auth/logout', null, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+    } catch {
+      // Ignore network/server failures. The local session is already cleared,
+      // so the user is signed out regardless of the server response.
+    }
   }, [])
 
   const value = useMemo(

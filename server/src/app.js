@@ -54,6 +54,20 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+// Readiness probe: unlike the liveness probe above, this reports 503 until the
+// database connection is established, so orchestrators can withhold traffic
+// from an instance that cannot serve requests yet.
+app.get('/api/health/ready', (req, res) => {
+  const isConnected = mongoose.connection.readyState === 1;
+
+  res.status(isConnected ? 200 : 503).json({
+    success: isConnected,
+    message: isConnected ? 'BMMS backend is ready' : 'BMMS backend is not ready',
+    database: isConnected ? 'connected' : 'disconnected',
+    timestamp: new Date().toISOString(),
+  });
+});
+
 app.use('/api/v1/auth', authRoutes);
 
 app.use('/api/v1', protect, loadBuildingScope);
