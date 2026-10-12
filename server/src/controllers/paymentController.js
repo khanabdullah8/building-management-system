@@ -37,6 +37,10 @@ const recalculateBillStatus = async (billId) => {
       p.paidAt < min.paidAt ? p : min
     );
     bill.paidAt = earliest.paidAt;
+  } else if (bill.status === 'overdue') {
+    // A partial/incomplete payment must not downgrade an overdue bill to
+    // pending. Keep it overdue until the outstanding balance is settled.
+    bill.paidAt = null;
   } else {
     bill.status = 'pending';
     bill.paidAt = null;
@@ -277,6 +281,41 @@ const createPayment = asyncHandler(async (req, res) => {
     }
   }
 
+  // Residents may only submit pending payments. Money is not marked received
+  // until a trusted admin/staff member confirms it. A resident-declared
+  // completed or failed status is rejected (not silently coerced) so a client
+  // cannot imply a verified payment.
+  const isResident = req.user.role === 'resident';
+  if (isResident && status !== undefined && status !== null && status !== 'pending') {
+    throw new ApiError(403, 'Residents may only submit payments with pending status', {
+      status: 'Residents may only submit pending payments',
+    });
+  }
+  const effectiveStatus = isResident ? 'pending' : status || 'completed';
+
+  // Resident self-service payments are unverified claims. Prevent a claim from
+  // exceeding the outstanding balance or being filed against an already-settled
+  // bill. Admin/staff retain the existing unrestricted workflow.
+  if (isResident) {
+    const settledPayments = await Payment.find({ bill: billId, status: 'completed' })
+      .select('amount')
+      .lean();
+    const paidToDate = settledPayments.reduce((sum, p) => sum + p.amount, 0);
+    const outstanding = bill.amount - paidToDate;
+
+    if (outstanding <= 0) {
+      throw new ApiError(400, 'This bill has already been paid in full', {
+        amount: 'Bill already paid',
+      });
+    }
+
+    if (amount > outstanding) {
+      throw new ApiError(400, `Amount exceeds the outstanding balance of ${outstanding}`, {
+        amount: 'Amount exceeds the outstanding balance',
+      });
+    }
+  }
+
   if (reference !== undefined && typeof reference !== 'string') {
     throw new ApiError(400, 'Reference must be a string', { reference: 'Reference must be a string' });
   }
@@ -300,7 +339,7 @@ const createPayment = asyncHandler(async (req, res) => {
     bill: billId,
     amount,
     method: method.trim(),
-    status: status || 'completed',
+    status: effectiveStatus,
     reference: reference !== undefined ? reference.trim() : '',
     notes: notes !== undefined ? notes.trim() : '',
     paidAt: new Date(),

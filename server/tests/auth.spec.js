@@ -161,4 +161,64 @@ describe('Auth API (/api/v1/auth)', () => {
       expect(res.status).toBe(401);
     });
   });
+
+  describe('JWT algorithm hardening (Phase 44)', () => {
+    let currentTokenVersion;
+
+    beforeAll(async () => {
+      const freshUser = await User.findById(testUser._id);
+      currentTokenVersion = freshUser.tokenVersion;
+    });
+
+    const payload = () => ({
+      id: testUser._id.toString(),
+      email: testUser.email,
+      role: testUser.role,
+      tokenVersion: currentTokenVersion,
+    });
+
+    const me = (token) =>
+      request(app).get('/api/v1/auth/me').set('Authorization', `Bearer ${token}`);
+
+    it('accepts a valid HS256 token', async () => {
+      const token = jwt.sign(payload(), JWT_SECRET, { algorithm: 'HS256', expiresIn: '1h' });
+      const res = await me(token);
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.user.email).toBe('authtest@test.local');
+    });
+
+    it('rejects an unsigned alg:none token with 401', async () => {
+      const encode = (obj) => Buffer.from(JSON.stringify(obj)).toString('base64url');
+      const unsigned = `${encode({ alg: 'none', typ: 'JWT' })}.${encode(payload())}.`;
+
+      const res = await me(unsigned);
+      expect(res.status).toBe(401);
+      expect(res.body.success).toBe(false);
+    });
+
+    it('rejects a token signed with a different secret with 401', async () => {
+      const token = jwt.sign(payload(), 'a-completely-different-secret-value', {
+        algorithm: 'HS256',
+        expiresIn: '1h',
+      });
+
+      const res = await me(token);
+      expect(res.status).toBe(401);
+    });
+
+    it('rejects an HS384 token with 401', async () => {
+      const token = jwt.sign(payload(), JWT_SECRET, { algorithm: 'HS384', expiresIn: '1h' });
+
+      const res = await me(token);
+      expect(res.status).toBe(401);
+    });
+
+    it('rejects an HS512 token with 401', async () => {
+      const token = jwt.sign(payload(), JWT_SECRET, { algorithm: 'HS512', expiresIn: '1h' });
+
+      const res = await me(token);
+      expect(res.status).toBe(401);
+    });
+  });
 });

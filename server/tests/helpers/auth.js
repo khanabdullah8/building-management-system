@@ -33,7 +33,7 @@ function getAuthToken(user) {
     role: u.role,
     tokenVersion: u.tokenVersion,
   };
-  return jwt.sign(payload, TEST_JWT_SECRET, { expiresIn: '1h' });
+  return jwt.sign(payload, TEST_JWT_SECRET, { algorithm: 'HS256', expiresIn: '1h' });
 }
 
 function authRequest(app, token) {

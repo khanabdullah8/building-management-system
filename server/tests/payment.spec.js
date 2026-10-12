@@ -892,4 +892,263 @@ describe('Payment API (/api/v1/payments)', () => {
       expect(res.body.data[0].bill.id).toBe(billA._id.toString());
     });
   });
+
+  describe('Resident payment integrity (Phase 41)', () => {
+    let residentUser;
+    let residentBuilding;
+    let residentUnit;
+    let residentBill;
+    let adminUser;
+    let adminToken;
+
+    const residentToken = () => `Bearer ${getAuthToken(residentUser)}`;
+
+    const createResidentFixture = async (suffix, buildingCode, unitNumber) => {
+      const building = await Building.create({ code: buildingCode, name: `Phase41 ${suffix}` });
+      const unit = await Unit.create({ unitNumber, building: building._id });
+      const resident = await Resident.create({
+        name: `P41 Resident ${suffix}`,
+        unit: unit._id,
+        phone: '9999999999',
+        type: 'owner',
+        status: 'active',
+      });
+      const user = await User.create({
+        name: `P41 User ${suffix}`,
+        email: `p41-${suffix}@test.local`,
+        password: 'password123',
+        role: 'resident',
+        status: 'active',
+        resident: resident._id,
+      });
+      return { building, unit, resident, user };
+    };
+
+    beforeEach(async () => {
+      await Payment.deleteMany({});
+      await Bill.deleteMany({});
+      await Unit.deleteMany({});
+      await Building.deleteMany({});
+      await Resident.deleteMany({});
+      await User.deleteMany({ role: 'resident' });
+
+      const fixture = await createResidentFixture('A', 'P41-BLD-A', 'P41-101');
+      residentUser = fixture.user;
+      residentBuilding = fixture.building;
+      residentUnit = fixture.unit;
+
+      residentBill = await Bill.create({
+        unit: residentUnit._id,
+        period: 'P41',
+        amount: 5000,
+        status: 'pending',
+      });
+
+      adminUser = await User.create({
+        name: 'P41 Admin',
+        email: 'p41-admin@test.local',
+        password: 'password123',
+        role: 'admin',
+        status: 'active',
+      });
+      adminToken = `Bearer ${getAuthToken(adminUser)}`;
+    });
+
+    afterEach(async () => {
+      await User.deleteMany({ role: 'resident' });
+      await Resident.deleteMany({});
+      if (adminUser) {
+        await User.findByIdAndDelete(adminUser._id);
+        adminUser = null;
+      }
+    });
+
+    it('creates a pending payment when a resident omits status', async () => {
+      const res = await authRequest(app, residentToken())
+        .post('/api/v1/payments')
+        .send({ bill: residentBill._id.toString(), amount: 1000, method: 'upi' });
+
+      expect(res.status).toBe(201);
+      expect(res.body.data.status).toBe('pending');
+    });
+
+    it('rejects a resident-supplied completed status', async () => {
+      const res = await authRequest(app, residentToken())
+        .post('/api/v1/payments')
+        .send({ bill: residentBill._id.toString(), amount: 1000, method: 'upi', status: 'completed' });
+
+      expect(res.status).toBe(403);
+      expect(await Payment.countDocuments({ bill: residentBill._id })).toBe(0);
+    });
+
+    it('rejects a resident-supplied failed status (pending-only policy)', async () => {
+      const res = await authRequest(app, residentToken())
+        .post('/api/v1/payments')
+        .send({ bill: residentBill._id.toString(), amount: 1000, method: 'upi', status: 'failed' });
+
+      expect(res.status).toBe(403);
+      expect(await Payment.countDocuments({ bill: residentBill._id })).toBe(0);
+    });
+
+    it('a pending resident payment does not mark the bill paid', async () => {
+      const res = await authRequest(app, residentToken())
+        .post('/api/v1/payments')
+        .send({ bill: residentBill._id.toString(), amount: 5000, method: 'upi' });
+
+      expect(res.status).toBe(201);
+      expect(res.body.data.status).toBe('pending');
+
+      const bill = await Bill.findById(residentBill._id);
+      expect(bill.status).toBe('pending');
+      expect(bill.paidAt).toBeNull();
+    });
+
+    it('admin can complete a payment through the existing authorized workflow', async () => {
+      const res = await authRequest(app, adminToken)
+        .post('/api/v1/payments')
+        .send({ bill: residentBill._id.toString(), amount: 5000, method: 'cash', status: 'completed' });
+
+      expect(res.status).toBe(201);
+      expect(res.body.data.status).toBe('completed');
+
+      const bill = await Bill.findById(residentBill._id);
+      expect(bill.status).toBe('paid');
+      expect(bill.paidAt).toBeTruthy();
+    });
+
+    it('only completed payments contribute to bill settlement', async () => {
+      const pendingRes = await authRequest(app, residentToken())
+        .post('/api/v1/payments')
+        .send({ bill: residentBill._id.toString(), amount: 5000, method: 'upi' });
+      expect(pendingRes.status).toBe(201);
+      expect(pendingRes.body.data.status).toBe('pending');
+
+      let bill = await Bill.findById(residentBill._id);
+      expect(bill.status).toBe('pending');
+      expect(bill.paidAt).toBeNull();
+
+      const completed = await authRequest(app, adminToken)
+        .patch(`/api/v1/payments/${pendingRes.body.data.id}`)
+        .send({ status: 'completed' });
+      expect(completed.status).toBe(200);
+      expect(completed.body.data.status).toBe('completed');
+
+      bill = await Bill.findById(residentBill._id);
+      expect(bill.status).toBe('paid');
+      expect(bill.paidAt).toBeTruthy();
+    });
+
+    it('resident cannot overpay beyond the outstanding balance', async () => {
+      const res = await authRequest(app, residentToken())
+        .post('/api/v1/payments')
+        .send({ bill: residentBill._id.toString(), amount: 6000, method: 'upi' });
+
+      expect(res.status).toBe(400);
+      expect(res.body.errors.amount).toBeTruthy();
+      expect(await Payment.countDocuments({ bill: residentBill._id })).toBe(0);
+    });
+
+    it('resident cannot create a payment against an already-paid bill', async () => {
+      await Payment.create({
+        bill: residentBill._id,
+        amount: 5000,
+        method: 'cash',
+        status: 'completed',
+      });
+      await Bill.findByIdAndUpdate(residentBill._id, { status: 'paid', paidAt: new Date() });
+
+      const res = await authRequest(app, residentToken())
+        .post('/api/v1/payments')
+        .send({ bill: residentBill._id.toString(), amount: 100, method: 'upi' });
+
+      expect(res.status).toBe(400);
+      expect(await Payment.countDocuments({ bill: residentBill._id })).toBe(1);
+    });
+
+    it('partial payment does not downgrade an overdue bill', async () => {
+      const overdueBill = await Bill.create({
+        unit: residentUnit._id,
+        period: 'P41-overdue',
+        amount: 4000,
+        status: 'overdue',
+      });
+
+      const res = await authRequest(app, adminToken)
+        .post('/api/v1/payments')
+        .send({ bill: overdueBill._id.toString(), amount: 1000, method: 'cash', status: 'completed' });
+
+      expect(res.status).toBe(201);
+
+      const bill = await Bill.findById(overdueBill._id);
+      expect(bill.status).toBe('overdue');
+      expect(bill.paidAt).toBeNull();
+    });
+
+    it('multiple partial resident claims settle only after verification', async () => {
+      const first = await authRequest(app, residentToken())
+        .post('/api/v1/payments')
+        .send({ bill: residentBill._id.toString(), amount: 2000, method: 'cash' });
+      const second = await authRequest(app, residentToken())
+        .post('/api/v1/payments')
+        .send({ bill: residentBill._id.toString(), amount: 3000, method: 'card' });
+
+      expect(first.status).toBe(201);
+      expect(second.status).toBe(201);
+
+      let bill = await Bill.findById(residentBill._id);
+      expect(bill.status).toBe('pending');
+      expect(bill.paidAt).toBeNull();
+
+      await authRequest(app, adminToken)
+        .patch(`/api/v1/payments/${first.body.data.id}`)
+        .send({ status: 'completed' });
+
+      bill = await Bill.findById(residentBill._id);
+      expect(bill.status).toBe('pending');
+
+      await authRequest(app, adminToken)
+        .patch(`/api/v1/payments/${second.body.data.id}`)
+        .send({ status: 'completed' });
+
+      bill = await Bill.findById(residentBill._id);
+      expect(bill.status).toBe('paid');
+    });
+
+    it('resident cannot create a payment for another unit bill (403)', async () => {
+      const otherFixture = await createResidentFixture('B', 'P41-BLD-B', 'P41-201');
+      const otherBill = await Bill.create({
+        unit: otherFixture.unit._id,
+        period: 'P41-B',
+        amount: 1000,
+        status: 'pending',
+      });
+
+      const res = await authRequest(app, residentToken())
+        .post('/api/v1/payments')
+        .send({ bill: otherBill._id.toString(), amount: 100, method: 'cash' });
+
+      expect(res.status).toBe(403);
+      expect(await Payment.countDocuments({ bill: otherBill._id })).toBe(0);
+    });
+
+    it('staff can still record payments for bills in their assigned building', async () => {
+      const staff = await User.create({
+        name: 'P41 Staff',
+        email: 'p41-staff@test.local',
+        password: 'password123',
+        role: 'staff',
+        status: 'active',
+        buildings: [residentBuilding._id],
+      });
+
+      const res = await authRequest(app, `Bearer ${getAuthToken(staff)}`)
+        .post('/api/v1/payments')
+        .send({ bill: residentBill._id.toString(), amount: 1000, method: 'cash' });
+
+      expect(res.status).toBe(201);
+      expect(res.body.data.status).toBe('completed');
+
+      await User.findByIdAndDelete(staff._id);
+    });
+  });
 });

@@ -34,7 +34,7 @@ const login = asyncHandler(async (req, res) => {
       tokenVersion: user.tokenVersion,
     },
     JWT_SECRET,
-    { expiresIn: '24h' }
+    { algorithm: 'HS256', expiresIn: '24h' }
   );
 
   const userData = user.toJSON();

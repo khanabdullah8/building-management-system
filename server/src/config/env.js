@@ -15,6 +15,35 @@ const RATE_LIMIT_MAX = Number(process.env.RATE_LIMIT_MAX) || 100;
 const REQUIRED = ['MONGO_URI'];
 const REQUIRED_IN_PRODUCTION = ['JWT_SECRET'];
 
+const MIN_JWT_SECRET_LENGTH = 32;
+const PLACEHOLDER_JWT_SECRETS = new Set([
+  'secret',
+  'password',
+  'development',
+  'test',
+  'test-secret',
+  'admin',
+  '123456',
+  '12345678',
+]);
+const PLACEHOLDER_JWT_MARKERS = [
+  'changeme',
+  'change-me',
+  'your-secret',
+  'your_secret',
+  'jwt-secret',
+  'jwtsecret',
+  'placeholder',
+  'replace-me',
+  'replace_me',
+];
+
+function isPlaceholderSecret(secret) {
+  const normalized = secret.trim().toLowerCase();
+  if (PLACEHOLDER_JWT_SECRETS.has(normalized)) return true;
+  return PLACEHOLDER_JWT_MARKERS.some((marker) => normalized.includes(marker));
+}
+
 function validateEnv() {
   const missing = REQUIRED.filter((key) => !process.env[key]);
 
@@ -25,6 +54,24 @@ function validateEnv() {
   if (missing.length > 0) {
     console.error(`Missing required environment variable(s): ${missing.join(', ')}`);
     process.exit(1);
+  }
+
+  if (NODE_ENV === 'production') {
+    const secret = process.env.JWT_SECRET;
+
+    if (secret.length < MIN_JWT_SECRET_LENGTH) {
+      console.error(
+        `JWT_SECRET must be at least ${MIN_JWT_SECRET_LENGTH} characters in production.`
+      );
+      process.exit(1);
+    }
+
+    if (isPlaceholderSecret(secret)) {
+      console.error(
+        'JWT_SECRET must not be an obvious placeholder value in production.'
+      );
+      process.exit(1);
+    }
   }
 
   if (!process.env.JWT_SECRET && NODE_ENV !== 'production') {
