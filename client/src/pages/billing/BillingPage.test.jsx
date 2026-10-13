@@ -74,7 +74,7 @@ describe('BillingPage CRUD functionality', () => {
 
     expect(await screen.findByText('BILL-001')).toBeInTheDocument()
     expect(screen.getByText('Jan 2026')).toBeInTheDocument()
-    expect(screen.getByText('$5,000.00')).toBeInTheDocument()
+    expect(screen.getByText('₹5,000.00')).toBeInTheDocument()
   })
 
   it('renders unit with building name in table', async () => {

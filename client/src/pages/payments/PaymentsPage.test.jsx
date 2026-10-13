@@ -69,7 +69,7 @@ describe('PaymentsPage CRUD functionality', () => {
   it('renders payments with populated Bill, Unit and Building data', async () => {
     renderPage()
     expect(await screen.findByText('PAY-001')).toBeInTheDocument()
-    expect(screen.getByText('$5,000.00')).toBeInTheDocument()
+    expect(screen.getByText('₹5,000.00')).toBeInTheDocument()
     expect(screen.getByText('completed')).toBeInTheDocument()
   })
 

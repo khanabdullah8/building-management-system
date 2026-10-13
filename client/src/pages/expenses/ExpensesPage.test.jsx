@@ -82,7 +82,7 @@ describe('ExpensesPage CRUD functionality', () => {
 
     expect(await screen.findByText('Electricity bill')).toBeInTheDocument()
     expect(screen.getAllByText('Greenwood Heights (BLD-A)').length).toBeGreaterThanOrEqual(1)
-    expect(screen.getByText('$18,400.00')).toBeInTheDocument()
+    expect(screen.getByText('₹18,400.00')).toBeInTheDocument()
   })
 
   it('renders category with first letter capitalized', async () => {

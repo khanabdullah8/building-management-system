@@ -1,6 +1,6 @@
 import { format } from 'date-fns'
 
-export const CURRENCY_SYMBOL = '$'
+export const CURRENCY_SYMBOL = '₹'
 
 export function formatDate(date, pattern = 'MMM d, yyyy') {
   if (!date) return '—'
@@ -14,8 +14,10 @@ export function formatDateTime(date) {
 
 export function formatCurrency(amount) {
   const value = Number(amount || 0)
-  return `${CURRENCY_SYMBOL}${value.toLocaleString(undefined, {
+  return value.toLocaleString('en-IN', {
+    style: 'currency',
+    currency: 'INR',
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
-  })}`
+  })
 }

@@ -87,7 +87,7 @@ describe('DashboardPage', () => {
     mockSuccess()
     renderPage()
     await waitFor(() => {
-      expect(screen.getByText('$184,500.00')).toBeInTheDocument()
+      expect(screen.getByText('₹1,84,500.00')).toBeInTheDocument()
     })
   })
 
@@ -113,7 +113,7 @@ describe('DashboardPage', () => {
     mockSuccess()
     renderPage()
     await waitFor(() => {
-      expect(screen.getByText('$4,500.00')).toBeInTheDocument()
+      expect(screen.getByText('₹4,500.00')).toBeInTheDocument()
     })
   })
 
@@ -151,7 +151,7 @@ describe('DashboardPage', () => {
     })
     renderPage()
     await waitFor(() => {
-      expect(screen.getByText('$1,000.00')).toBeInTheDocument()
+      expect(screen.getByText('₹1,000.00')).toBeInTheDocument()
     })
   })
 })
